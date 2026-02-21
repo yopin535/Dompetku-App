@@ -137,22 +137,22 @@ const App = () => {
     };
   }, []);
 
-  // 1. Inisialisasi Autentikasi
+  // 1. Inisialisasi Autentikasi (Diperbaiki agar sesi tidak hilang saat refresh)
   useEffect(() => {
-    const initAuth = async () => {
-      if (!auth.currentUser) {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        // Jika ada sesi yang tersimpan (Google atau Tamu), gunakan itu
+        setUser(currentUser);
+        setLoading(false);
+      } else {
+        // Hanya buat sesi Tamu baru JIKA benar-benar tidak ada sesi yang tersimpan
         try {
           await signInAnonymously(auth);
         } catch (error) {
           console.error("Gagal login anonim", error);
+          setLoading(false);
         }
       }
-    };
-    initAuth();
-    
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      if (!currentUser) setLoading(false);
     });
     return () => unsubscribe();
   }, []);
@@ -529,8 +529,6 @@ const App = () => {
           const matches = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
           const cols = matches || row.split(',');
           // Deteksi kolom: V1 punya 6 kolom, V2 punya 7 (ada currency)
-          // V1: iso_date, display, desc, cat, type, amount
-          // V2: iso_date, display, desc, cat, type, currency, amount
           if (cols && cols.length >= 6) {
             const clean = (str) => str ? str.replace(/^"|"$/g, '').replace(/""/g, '"') : '';
             const isoDate = clean(cols[0]);
@@ -956,7 +954,15 @@ const App = () => {
       <div className="max-w-md mx-auto relative min-h-screen">
         {renderHeader()}
         
-        {loading && <div className="fixed inset-0 bg-white/80 z-50 flex items-center justify-center"><div className="flex flex-col items-center"><Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-2" /><p className="text-sm text-gray-500">Memuat data...</p></div></div>}
+        {/* Loading Indicator Transparan */}
+        {loading && (
+          <div className="fixed inset-0 bg-white/60 z-50 flex items-center justify-center backdrop-blur-sm">
+            <div className="flex flex-col items-center p-6 bg-white rounded-2xl shadow-xl border border-gray-100">
+              <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-3" />
+              <p className="text-sm font-bold text-gray-700">Sinkronisasi Data...</p>
+            </div>
+          </div>
+        )}
         
         {notification && (
           <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-4 duration-300 w-full max-w-sm px-4">
