@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Wallet, TrendingUp, TrendingDown, DollarSign, 
   Cloud, Loader2, Tag, Calendar, PieChart, List, ChevronLeft, ChevronRight, 
   Download, Upload, FileText, CheckCircle, XCircle, X, Settings, Sparkles,
-  LogOut, LogIn, AlertTriangle, User, Info, Check, CloudOff, RefreshCw, Globe, Edit2
+  LogOut, LogIn, AlertTriangle, User, Info, Check, CloudOff, RefreshCw, Globe
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -22,8 +22,7 @@ import {
   doc, 
   onSnapshot, 
   getDocs, 
-  writeBatch,
-  updateDoc
+  writeBatch 
 } from 'firebase/firestore';
 
 // =====================================================================
@@ -87,9 +86,6 @@ const App = () => {
   const [category, setCategory] = useState('Makanan');
   const [currency, setCurrency] = useState('IDR'); // Default mata uang
   const [date, setDate] = useState(getCurrentDate());
-  
-  // State untuk mode Edit
-  const [editId, setEditId] = useState(null);
 
   // Report State
   const [reportDate, setReportDate] = useState(new Date());
@@ -383,57 +379,17 @@ const App = () => {
     setSyncStatus('saving');
     try {
       const selectedDate = new Date(date);
-      const transactionData = {
-        description, 
-        amount: parseFloat(amount), 
-        type, 
-        category, 
-        currency,
+      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), {
+        description, amount: parseFloat(amount), type, category, currency,
         date: selectedDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
-        transactionDate: selectedDate.getTime()
-      };
-
-      if (editId) {
-        // Mode Update/Edit
-        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', editId), transactionData);
-        setNotification({ type: 'success', message: 'Transaksi diperbarui.' });
-        setEditId(null);
-      } else {
-        // Mode Simpan Baru
-        transactionData.createdAt = Date.now();
-        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), transactionData);
-        setNotification({ type: 'success', message: 'Transaksi disimpan.' });
-      }
-      
+        transactionDate: selectedDate.getTime(), createdAt: Date.now()
+      });
       setDescription(''); setAmount(''); setDate(getCurrentDate());
+      setNotification({ type: 'success', message: 'Transaksi disimpan.' });
     } catch (error) {
-      setNotification({ type: 'error', message: editId ? 'Gagal memperbarui.' : 'Gagal menyimpan.' });
+      setNotification({ type: 'error', message: 'Gagal menyimpan.' });
       setSyncStatus('offline');
     }
-  };
-
-  const handleEditClick = (t) => {
-    setEditId(t.id);
-    setDescription(t.description);
-    setAmount(t.amount.toString());
-    setType(t.type);
-    setCategory(t.category || (t.type === 'expense' ? expenseCategories[0] : incomeCategories[0]));
-    setCurrency(t.currency || 'IDR');
-    
-    // Format timestamp kembali ke YYYY-MM-DD untuk input date
-    const d = new Date(t.transactionDate || t.createdAt);
-    const formattedDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    setDate(formattedDate);
-    
-    // Gulir ke atas menuju form
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const cancelEdit = () => {
-    setEditId(null);
-    setDescription('');
-    setAmount('');
-    setDate(getCurrentDate());
   };
 
   const handleDelete = async (id) => {
@@ -670,11 +626,8 @@ const App = () => {
           </div>
         </div>
 
-        <div className={`bg-white rounded-2xl shadow-sm border p-5 mb-6 transition-all ${editId ? 'border-blue-300 ring-4 ring-blue-50' : 'border-gray-100'}`}>
-          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-            {editId ? <Edit2 className="w-5 h-5 text-blue-600" /> : null}
-            {editId ? 'Edit Transaksi' : 'Tambah Transaksi'}
-          </h3>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
+          <h3 className="font-bold text-gray-800 mb-4">Tambah Transaksi</h3>
           <form onSubmit={handleAddTransaction} className="space-y-3">
             <div className="flex bg-gray-100 p-1 rounded-lg h-[42px] mb-4">
               <button type="button" onClick={() => setType('income')} className={`flex-1 flex items-center justify-center rounded-md text-sm font-medium transition-all ${type === 'income' ? 'bg-emerald-500 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Pemasukan</button>
@@ -727,26 +680,15 @@ const App = () => {
               </div>
             </div>
 
-            <div className="flex gap-2 mt-2">
-              {editId && (
-                <button type="button" onClick={cancelEdit} className="w-1/3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 rounded-xl transition-colors">
-                  Batal
-                </button>
-              )}
-              <button type="submit" disabled={!user || loading} className={`${editId ? 'w-2/3 bg-blue-600 hover:bg-blue-700' : 'w-full bg-gray-900 hover:bg-black'} text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed`}>
-                {editId ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />} 
-                {editId ? 'Perbarui' : 'Simpan Transaksi'}
-              </button>
-            </div>
+            <button type="submit" disabled={!user || loading} className="w-full bg-gray-900 hover:bg-black text-white font-medium py-3 rounded-xl mt-2 flex items-center justify-center gap-2 transition-colors shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed">
+              <Plus className="w-5 h-5" /> Simpan Transaksi
+            </button>
           </form>
         </div>
 
         <div>
           <h3 className="font-bold text-gray-800 mb-4 flex items-center justify-between">
-            Riwayat Terbaru 
-            <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-              {transactions.length} transaksi
-            </span>
+            Riwayat Terbaru <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-1 rounded-full">{transactions.length} items</span>
           </h3>
           {transactions.length === 0 ? (
             <div className="text-center py-10 bg-white rounded-2xl border border-dashed border-gray-200">
@@ -769,9 +711,8 @@ const App = () => {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <span className={`font-bold text-sm mr-2 ${t.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>{t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount, t.currency)}</span>
-                    <button onClick={() => handleEditClick(t)} className="text-gray-300 hover:text-blue-500 transition-colors p-1"><Edit2 className="w-4 h-4" /></button>
+                  <div className="flex items-center gap-3">
+                    <span className={`font-bold text-sm ${t.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>{t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount, t.currency)}</span>
                     <button onClick={() => handleDelete(t.id)} className="text-gray-300 hover:text-rose-500 transition-colors p-1"><Trash2 className="w-4 h-4" /></button>
                   </div>
                 </div>
@@ -838,46 +779,6 @@ const App = () => {
                   <div className="text-right"><span className="text-gray-900 font-bold">{formatCurrency(cat.amount, reportCurrency)}</span><span className="text-xs text-gray-500 ml-1">({Math.round(cat.percentage)}%)</span></div>
                 </div>
                 <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden"><div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${cat.percentage}%` }}></div></div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Bagian Riwayat Transaksi di Laporan */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
-        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-          <List className="w-4 h-4 text-gray-500" /> Rincian Transaksi ({reportCurrency})
-        </h3>
-        
-        {reportTransactions.length === 0 ? (
-          <div className="text-center py-8 text-gray-400 text-sm">Tidak ada transaksi.</div>
-        ) : (
-          <div className="space-y-3">
-            {/* Mengurutkan berdasarkan tanggal terbaru */}
-            {[...reportTransactions].sort((a, b) => {
-              const dateA = new Date(a.transactionDate || a.createdAt);
-              const dateB = new Date(b.transactionDate || b.createdAt);
-              return dateB - dateA;
-            }).map((t) => (
-              <div key={t.id} className="flex justify-between items-center py-2 border-b border-gray-50 last:border-0">
-                <div className="flex items-center gap-3">
-                   <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${t.type === 'income' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                      {t.type === 'income' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-800 line-clamp-1">{t.description}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[10px] text-gray-500">{t.date}</span>
-                        <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{t.category}</span>
-                      </div>
-                    </div>
-                </div>
-                <div className="text-right flex-shrink-0 ml-2">
-                  <p className={`text-sm font-bold ${t.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                    {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount, t.currency)}
-                  </p>
-                </div>
               </div>
             ))}
           </div>
