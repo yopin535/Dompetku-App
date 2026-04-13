@@ -90,6 +90,7 @@ export default function App() {
   const [currency, setCurrency] = useState('IDR'); 
   const [date, setDate] = useState(getCurrentDate());
   const [editId, setEditId] = useState(null);
+  const [homeViewDate, setHomeViewDate] = useState(new Date());
 
   const [reportDate, setReportDate] = useState(new Date());
   const [reportType, setReportType] = useState('monthly'); 
@@ -316,6 +317,7 @@ export default function App() {
         setNotification({ type: 'success', message: 'Transaksi disimpan.' });
       }
       
+      setHomeViewDate(selectedDate);
       setDescription(''); setAmount(''); setDate(getCurrentDate());
     } catch (error) {
       setNotification({ type: 'error', message: editId ? 'Gagal memperbarui.' : 'Gagal menyimpan.' });
@@ -372,25 +374,32 @@ export default function App() {
     </div>
   );
 
-  const renderHomeView = () => {
-    // 1. Filter transaksi khusus bulan dan tahun ini
-    const now = new Date();
-    const currentMonthTransactions = transactions.filter(t => {
-      const d = new Date(t.transactionDate || t.createdAt);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    });
+  const changeHomeMonth = (increment) => {
+    const newDate = new Date(homeViewDate);
+    newDate.setMonth(newDate.getMonth() + increment);
+    setHomeViewDate(newDate);
+  };
 
-    // 2. Kelompokkan berdasarkan tanggal ('date')
-    const groupedArray = [];
-    currentMonthTransactions.forEach(t => {
-      const lastGroup = groupedArray[groupedArray.length - 1];
+  const { groupedHomeTransactions, homeTransactionsCount } = useMemo(() => {
+    const filtered = transactions.filter(t => {
+      const d = new Date(t.transactionDate || t.createdAt);
+      return d.getMonth() === homeViewDate.getMonth() && d.getFullYear() === homeViewDate.getFullYear();
+    });
+    
+    const grouped = [];
+    filtered.forEach(t => {
+      const lastGroup = grouped[grouped.length - 1];
       if (lastGroup && lastGroup.date === t.date) {
           lastGroup.items.push(t);
       } else {
-          groupedArray.push({ date: t.date, items: [t] });
+          grouped.push({ date: t.date, items: [t] });
       }
     });
+    
+    return { groupedHomeTransactions: grouped, homeTransactionsCount: filtered.length };
+  }, [transactions, homeViewDate]);
 
+  const renderHomeView = () => {
     return (
       <div className="animate-in fade-in duration-300">
         
@@ -461,23 +470,27 @@ export default function App() {
           </form>
         </div>
 
-        {/* Daftar Riwayat Bulan Ini (Dikelompokkan Berdasarkan Tanggal) */}
+        {/* Daftar Riwayat (Dikelompokkan Berdasarkan Tanggal) */}
         <div>
-          <h3 className="font-bold text-gray-800 mb-4 flex items-center justify-between">
-            Riwayat Bulan Ini 
-            <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-              {currentMonthTransactions.length} transaksi
-            </span>
-          </h3>
+          <div className="flex items-center justify-between mb-4 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
+            <button type="button" onClick={() => changeHomeMonth(-1)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
+            <div className="text-center">
+              <h3 className="font-bold text-gray-800 text-sm">
+                {homeViewDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
+              </h3>
+              <p className="text-[10px] text-gray-500">{homeTransactionsCount} transaksi</p>
+            </div>
+            <button type="button" onClick={() => changeHomeMonth(1)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ChevronRight className="w-5 h-5 text-gray-600" /></button>
+          </div>
           
-          {groupedArray.length === 0 ? (
+          {groupedHomeTransactions.length === 0 ? (
             <div className="text-center py-10 bg-white rounded-2xl border border-dashed border-gray-200">
               <div className="bg-gray-50 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3"><DollarSign className="w-6 h-6 text-gray-400" /></div>
               <p className="text-gray-500 text-sm">{loading ? 'Sedang memuat data...' : 'Belum ada transaksi di bulan ini'}</p>
             </div>
           ) : (
             <div className="space-y-6 pb-8">
-              {groupedArray.map((group) => (
+              {groupedHomeTransactions.map((group) => (
                 <div key={group.date} className="animate-in fade-in slide-in-from-bottom-2">
                   <h4 className="text-sm font-bold text-gray-500 border-b border-gray-200 pb-2 mb-3 sticky top-[72px] bg-gray-50/95 backdrop-blur-sm z-10">
                     {group.date}
@@ -694,4 +707,4 @@ export default function App() {
       </div>
     </div>
   );
-    }
+        }
