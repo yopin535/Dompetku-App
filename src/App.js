@@ -358,6 +358,90 @@ export default function App() {
     else setCategory(val);
   };
 
+  // --- KEMBALIKAN FUNGSI EKSPOR & IMPOR DATA ---
+  const downloadCSV = () => {
+    if (transactions.length === 0) {
+      setNotification({ type: 'error', message: 'Tidak ada data.' });
+      return;
+    }
+    const headers = ['iso_date', 'tanggal_display', 'deskripsi', 'kategori', 'tipe', 'mata_uang', 'jumlah'];
+    const csvRows = [headers.join(',')];
+    transactions.forEach(t => {
+      const dateObj = new Date(t.transactionDate || t.createdAt);
+      const isoDate = dateObj.toISOString().split('T')[0];
+      const row = [
+        isoDate, `"${t.date}"`, `"${t.description.replace(/"/g, '""')}"`, 
+        t.category, t.type, t.currency || 'IDR', t.amount
+      ];
+      csvRows.push(row.join(','));
+    });
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Backup_Full_Keuangan.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportClick = () => fileInputRef.current?.click();
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const rows = event.target.result.split('\n');
+        let importedCount = 0;
+        setLoading(true);
+        setSyncStatus('saving');
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i].trim();
+          if (!row) continue;
+          const matches = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
+          const cols = matches || row.split(',');
+          if (cols && cols.length >= 6) {
+            const clean = (str) => str ? str.replace(/^"|"$/g, '').replace(/""/g, '"') : '';
+            const isoDate = clean(cols[0]);
+            const description = clean(cols[2]);
+            const category = clean(cols[3]);
+            const type = clean(cols[4]);
+            let curr = 'IDR';
+            let amt = 0;
+            if (cols.length === 7) {
+               curr = clean(cols[5]);
+               amt = parseFloat(clean(cols[6]));
+            } else {
+               amt = parseFloat(clean(cols[5]));
+            }
+            if (isoDate && description && !isNaN(amt)) {
+              const dateObj = new Date(isoDate);
+              await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), {
+                description, amount: amt, type: type.includes('income') || type.includes('Pemasukan') ? 'income' : 'expense',
+                category, currency: curr,
+                date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+                transactionDate: dateObj.getTime(), createdAt: Date.now()
+              });
+              importedCount++;
+            }
+          }
+        }
+        setLoading(false);
+        setNotification({ type: 'success', message: `Berhasil mengimpor ${importedCount} transaksi.` });
+        e.target.value = null;
+      } catch (error) {
+        setLoading(false);
+        setNotification({ type: 'error', message: 'Gagal import.' });
+      } finally {
+        setSyncStatus('synced');
+      }
+    };
+    reader.readAsText(file);
+  };
+  // --- SELESAI FUNGSI TAMBAHAN ---
+
   const renderHeader = () => (
     <div className="sticky top-0 bg-gray-50/95 backdrop-blur-sm z-20 px-4 py-4 border-b border-gray-200 md:border-none md:static md:px-0 md:py-0 md:bg-transparent">
       <header className="flex items-center justify-between">
@@ -641,6 +725,8 @@ export default function App() {
   const renderSettingsView = () => (
     <div className="animate-in fade-in duration-300">
       <h2 className="text-2xl font-bold text-gray-900 mb-6">Pengaturan</h2>
+      
+      {/* 1. Bagian Akun */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
         <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Akun Saya</h3>
         <div className="flex items-center justify-between">
@@ -653,10 +739,70 @@ export default function App() {
             <button onClick={handleLogout} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl text-xs font-medium transition-colors flex items-center gap-2"><LogOut className="w-4 h-4" /> Keluar</button>
           }
         </div>
+        <div className="mt-4 p-3 bg-emerald-50 rounded-xl flex gap-3 border border-emerald-100">
+          <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+          <div>
+            <p className="text-xs font-bold text-emerald-800">Auto Backup Aktif</p>
+            <p className="text-[10px] text-emerald-700 mt-0.5">Setiap transaksi otomatis tersimpan ke server Google. Data aman meskipun Anda berganti perangkat.</p>
+          </div>
+        </div>
       </div>
+
+      {/* 2. Pengaturan Kategori */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
+        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Kategori</h3>
+        <div className="space-y-3">
+          <button onClick={() => { setType('expense'); setShowCatModal(true); }} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-rose-50 border border-gray-200 hover:border-rose-200 transition-all group">
+            <div className="flex items-center gap-3">
+              <div className="bg-rose-100 p-2 rounded-lg group-hover:bg-rose-200 transition-colors"><Tag className="w-5 h-5 text-rose-600" /></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Kategori Pengeluaran</p><p className="text-xs text-gray-400">Atur label pengeluaran</p></div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-400" />
+          </button>
+          <button onClick={() => { setType('income'); setShowCatModal(true); }} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-200 hover:border-emerald-200 transition-all group">
+            <div className="flex items-center gap-3">
+              <div className="bg-emerald-100 p-2 rounded-lg group-hover:bg-emerald-200 transition-colors"><Tag className="w-5 h-5 text-emerald-600" /></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Kategori Pemasukan</p><p className="text-xs text-gray-400">Atur sumber pendapatan</p></div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-400" />
+          </button>
+        </div>
+      </div>
+
+      {/* 3. Manajemen Data */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
+        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Manajemen Data</h3>
+        <div className="space-y-3">
+          <button onClick={downloadCSV} disabled={transactions.length === 0} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 transition-all group">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-100 p-2 rounded-lg group-hover:bg-blue-200 transition-colors"><Download className="w-5 h-5 text-blue-600" /></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Export ke Excel (Backup Manual)</p><p className="text-xs text-gray-400">Unduh file .csv untuk arsip</p></div>
+            </div>
+          </button>
+          <button onClick={handleImportClick} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-200 hover:border-emerald-200 transition-all group">
+             <div className="flex items-center gap-3">
+              <div className="bg-emerald-100 p-2 rounded-lg group-hover:bg-emerald-200 transition-colors"><Upload className="w-5 h-5 text-emerald-600" /></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Restore Data</p><p className="text-xs text-gray-400">Kembalikan data dari file backup</p></div>
+            </div>
+          </button>
+          <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv" className="hidden" />
+          <button onClick={() => setShowDummyModal(true)} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-purple-50 border border-gray-200 hover:border-purple-200 transition-all group">
+             <div className="flex items-center gap-3">
+              <div className="bg-purple-100 p-2 rounded-lg group-hover:bg-purple-200 transition-colors"><Sparkles className="w-5 h-5 text-purple-600" /></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Isi Data Demo</p><p className="text-xs text-gray-400">Buat transaksi contoh otomatis</p></div>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* 4. Zona Bahaya */}
       <div className="bg-white rounded-2xl shadow-sm border border-red-100 p-5 mb-6">
         <h3 className="text-sm font-bold text-red-500 uppercase tracking-wider mb-4 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> Zona Bahaya</h3>
         <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data</button>
+      </div>
+      
+      <div className="text-center text-xs text-gray-300 pb-8">
+        Dompetku Cloud v1.3.0
       </div>
     </div>
   );
@@ -676,9 +822,82 @@ export default function App() {
           </div>
         )}
 
-        {/* Modal Reset (Dipendekkan agar file tidak terlalu besar) */}
+        {/* Modal Konfirmasi Demo Data */}
+        {showDummyModal && (
+          <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl">
+              <div className="flex flex-col items-center text-center mb-6">
+                <div className="bg-purple-100 p-3 rounded-full mb-4">
+                  <Sparkles className="w-8 h-8 text-purple-600" />
+                </div>
+                <h3 className="font-bold text-xl text-gray-900">Isi Data Demo?</h3>
+                <p className="text-sm text-gray-500 mt-2">
+                  Tindakan ini akan menambahkan beberapa transaksi contoh ke dalam catatan Anda.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setShowDummyModal(false)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition-colors">Batal</button>
+                <button onClick={confirmGenerateDummy} className="flex-1 py-3 rounded-xl bg-purple-600 text-white font-medium hover:bg-purple-700 transition-colors shadow-lg shadow-purple-200">Ya, Tambahkan</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Konfirmasi Reset */}
         {showResetModal && (
-          <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4"><div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl"><div className="flex flex-col items-center text-center mb-6"><div className="bg-red-100 p-3 rounded-full mb-4"><AlertTriangle className="w-8 h-8 text-red-600" /></div><h3 className="font-bold text-xl text-gray-900">Hapus Semua Data?</h3></div><div className="flex gap-3"><button onClick={() => setShowResetModal(false)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-700 font-medium">Batal</button><button onClick={handleResetData} className="flex-1 py-3 rounded-xl bg-red-600 text-white font-medium">Ya, Hapus</button></div></div></div>
+          <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl">
+              <div className="flex flex-col items-center text-center mb-6">
+                <div className="bg-red-100 p-3 rounded-full mb-4">
+                  <AlertTriangle className="w-8 h-8 text-red-600" />
+                </div>
+                <h3 className="font-bold text-xl text-gray-900">Hapus Semua Data?</h3>
+                <p className="text-sm text-gray-500 mt-2">
+                  Tindakan ini akan menghapus semua riwayat transaksi secara permanen.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setShowResetModal(false)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition-colors">Batal</button>
+                <button onClick={handleResetData} className="flex-1 py-3 rounded-xl bg-red-600 text-white font-medium hover:bg-red-700 transition-colors shadow-lg shadow-red-200">Ya, Hapus</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Kelola Kategori */}
+        {showCatModal && (
+          <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl max-h-[80vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-lg">Kelola Kategori {type === 'expense' ? 'Pengeluaran' : 'Pemasukan'}</h3>
+                <button onClick={() => setShowCatModal(false)}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
+              </div>
+              <div className="mb-6">
+                <form onSubmit={handleSaveCategory}>
+                  <label className="block text-xs font-medium text-gray-500 mb-2">Tambah Kategori Baru</label>
+                  <div className="flex gap-2">
+                    <input autoFocus type="text" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} placeholder="Nama Kategori..." className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                    <button type="submit" disabled={!newCatName.trim()} className="px-4 py-2.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"><Plus className="w-5 h-5" /></button>
+                  </div>
+                </form>
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Kategori Kustom</h4>
+                {customCategories.filter(c => c.type === type).length === 0 ? (
+                  <div className="text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200"><p className="text-xs text-gray-400">Belum ada kategori kustom.</p></div>
+                ) : (
+                  <ul className="space-y-2">
+                    {customCategories.filter(c => c.type === type).map((c) => (
+                      <li key={c.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100 group hover:border-blue-200 transition-colors">
+                        <span className="text-sm font-medium text-gray-700">{c.name}</span>
+                        <button onClick={() => handleDeleteCategory(c.id, c.name)} className="text-gray-400 hover:text-rose-500 p-1.5 hover:bg-rose-50 rounded-lg transition-all"><Trash2 className="w-4 h-4" /></button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
         )}
 
         <div className="p-4 md:px-0">
@@ -707,4 +926,4 @@ export default function App() {
       </div>
     </div>
   );
-        }
+              }
