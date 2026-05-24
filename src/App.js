@@ -1,4 +1,3 @@
-react
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Plus, Trash2, Wallet, TrendingUp, TrendingDown, DollarSign, 
@@ -993,4 +992,4 @@ export default function App() {
       </div>
     </div>
   );
-}
+        }
