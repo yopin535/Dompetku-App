@@ -1,4 +1,4 @@
-react
+```react
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Plus, Trash2, Wallet, TrendingUp, TrendingDown, DollarSign, 
@@ -30,7 +30,7 @@ import {
 } from 'firebase/firestore';
 
 // =====================================================================
-// FIREBASE CONFIG SUDAH TERISI
+// FIREBASE CONFIG MILIKMU
 // =====================================================================
 const firebaseConfig = {
   apiKey: "AIzaSyA3GU59sJ0W9QKGyWZ3LjBffUnNoxp46MY",
@@ -255,7 +255,12 @@ export default function App() {
         if (data.error) throw new Error(data.error.message);
 
         const aiText = data.candidates[0].content.parts[0].text;
-        const cleanJson = aiText.replace(/```json/g, '').replace(/```/g, '').trim();
+        
+        // Membersihkan format markdown dengan aman menggunakan RegExp Object
+        const regexJson = new RegExp("```json", "gi");
+        const regexTick = new RegExp("```", "g");
+        const cleanJson = aiText.replace(regexJson, '').replace(regexTick, '').trim();
+        
         const result = JSON.parse(cleanJson);
 
         if (result.description) setDescription(result.description);
@@ -406,7 +411,7 @@ export default function App() {
   const renderHomeView = () => {
     return (
       <div className="animate-in fade-in duration-300">
-        <div className={`bg-white rounded-2xl shadow-sm border p-5 mt-2 mb-6 transition-all relative overflow-hidden ${editId ? 'border-blue-300 ring-4 ring-blue-50' : 'border-gray-100'}`}>
+        <div className={"bg-white rounded-2xl shadow-sm border p-5 mt-2 mb-6 transition-all relative overflow-hidden " + (editId ? "border-blue-300 ring-4 ring-blue-50" : "border-gray-100")}>
           {isScanning && (
             <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
               <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-2" />
@@ -416,7 +421,7 @@ export default function App() {
 
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-gray-800 flex items-center gap-2">
-              {editId ? <Edit2 className="w-5 h-5 text-blue-600" /> : 'Tambah Transaksi'}
+              {editId ? <Edit2 className="w-5 h-5 text-blue-600" /> : "Tambah Transaksi"}
             </h3>
             
             {!editId && (
@@ -431,8 +436,8 @@ export default function App() {
 
           <form onSubmit={handleAddTransaction} className="space-y-4">
             <div className="flex bg-gray-100 p-1 rounded-lg h-[42px]">
-              <button type="button" onClick={() => setType('income')} className={`flex-1 flex items-center justify-center rounded-md text-sm font-medium transition-all ${type === 'income' ? 'bg-emerald-500 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Pemasukan</button>
-              <button type="button" onClick={() => setType('expense')} className={`flex-1 flex items-center justify-center rounded-md text-sm font-medium transition-all ${type === 'expense' ? 'bg-rose-500 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Pengeluaran</button>
+              <button type="button" onClick={() => setType('income')} className={"flex-1 flex items-center justify-center rounded-md text-sm font-medium transition-all " + (type === 'income' ? "bg-emerald-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}>Pemasukan</button>
+              <button type="button" onClick={() => setType('expense')} className={"flex-1 flex items-center justify-center rounded-md text-sm font-medium transition-all " + (type === 'expense' ? "bg-rose-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}>Pengeluaran</button>
             </div>
             
             <div>
@@ -472,7 +477,7 @@ export default function App() {
                     key={"label-" + cat} 
                     type="button" 
                     onClick={() => toggleCategory(cat)} 
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${getLabelClass(cat)}`}
+                    className={"px-3 py-1.5 rounded-full text-xs font-medium transition-all border " + getLabelClass(cat)}
                   >
                     {cat}
                   </button>
@@ -483,9 +488,9 @@ export default function App() {
 
             <div className="flex gap-2 mt-4 pt-2 border-t border-gray-100">
               {editId && <button type="button" onClick={cancelEdit} className="w-1/3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 rounded-xl transition-colors">Batal</button>}
-              <button type="submit" disabled={!user || loading || isScanning} className={`${editId ? 'w-2/3 bg-blue-600 hover:bg-blue-700' : 'w-full bg-gray-900 hover:bg-black'} text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed`}>
+              <button type="submit" disabled={!user || loading || isScanning} className={"text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed " + (editId ? "w-2/3 bg-blue-600 hover:bg-blue-700" : "w-full bg-gray-900 hover:bg-black")}>
                 {editId ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />} 
-                {editId ? 'Perbarui' : 'Simpan Transaksi'}
+                {editId ? "Perbarui" : "Simpan Transaksi"}
               </button>
             </div>
           </form>
@@ -515,7 +520,9 @@ export default function App() {
                     {group.items.map((t) => (
                       <div key={t.id} className="group bg-white p-4 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center justify-between">
                         <div className="flex items-center gap-4 w-2/3">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${t.type === 'income' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>{t.type === 'income' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}</div>
+                          <div className={"w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 " + (t.type === 'income' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600")}>
+                             {t.type === 'income' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
+                          </div>
                           <div className="min-w-0">
                             <h4 className="font-semibold text-gray-800 text-sm truncate">{t.description}</h4>
                             <div className="flex flex-wrap gap-1 mt-1">
@@ -526,7 +533,9 @@ export default function App() {
                           </div>
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0">
-                          <span className={`font-bold text-sm mr-2 ${t.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>{t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount, t.currency)}</span>
+                          <span className={"font-bold text-sm mr-2 " + (t.type === 'income' ? "text-emerald-600" : "text-rose-600")}>
+                             {t.type === 'income' ? "+" : "-"}{formatCurrency(t.amount, t.currency)}
+                          </span>
                           <button onClick={() => handleEditClick(t)} className="text-gray-300 hover:text-blue-500 transition-colors p-1"><Edit2 className="w-4 h-4" /></button>
                           <button onClick={() => handleDelete(t.id)} className="text-gray-300 hover:text-rose-500 transition-colors p-1"><Trash2 className="w-4 h-4" /></button>
                         </div>
@@ -598,8 +607,8 @@ export default function App() {
     <div className="animate-in fade-in duration-300">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
         <div className="flex bg-gray-100 p-1 rounded-lg mb-6">
-          <button onClick={() => setReportType('monthly')} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${reportType === 'monthly' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Bulanan</button>
-          <button onClick={() => setReportType('yearly')} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${reportType === 'yearly' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Tahunan</button>
+          <button onClick={() => setReportType('monthly')} className={"flex-1 py-1.5 text-xs font-medium rounded-md transition-all " + (reportType === 'monthly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>Bulanan</button>
+          <button onClick={() => setReportType('yearly')} className={"flex-1 py-1.5 text-xs font-medium rounded-md transition-all " + (reportType === 'yearly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>Tahunan</button>
         </div>
         
         <div className="flex justify-center mb-4">
@@ -622,9 +631,9 @@ export default function App() {
           <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100"><p className="text-xs text-emerald-600 mb-1">Pemasukan</p><p className="font-bold text-emerald-700">{formatCurrency(reportSummary.income, reportCurrency)}</p></div>
           <div className="bg-rose-50 p-3 rounded-xl border border-rose-100"><p className="text-xs text-rose-600 mb-1">Pengeluaran</p><p className="font-bold text-rose-700">{formatCurrency(reportSummary.expense, reportCurrency)}</p></div>
         </div>
-        <div className={`text-center p-4 rounded-xl border mb-8 ${getBalanceColorClass()}`}>
+        <div className={"text-center p-4 rounded-xl border mb-8 " + getBalanceColorClass()}>
           <p className="text-xs text-gray-500 mb-1">Arus Kas Bersih (Net Cashflow)</p>
-          <p className={`text-2xl font-bold ${getBalanceTextClass()}`}>{reportSummary.balance >= 0 ? '+' : ''}{formatCurrency(reportSummary.balance, reportCurrency)}</p>
+          <p className={"text-2xl font-bold " + getBalanceTextClass()}>{reportSummary.balance >= 0 ? "+" : ""}{formatCurrency(reportSummary.balance, reportCurrency)}</p>
         </div>
         <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><PieChart className="w-4 h-4 text-gray-500" /> Statistik Pengeluaran (Berdasarkan Label Utama)</h3>
         {categoryStats.length === 0 ? <div className="text-center py-8 text-gray-400 text-sm">Belum ada data.</div> : (
@@ -645,7 +654,9 @@ export default function App() {
             {[...reportTransactions].sort((a, b) => new Date(b.transactionDate || b.createdAt) - new Date(a.transactionDate || a.createdAt)).map((t) => (
               <div key={t.id} className="flex justify-between items-center py-2 border-b border-gray-50 last:border-0">
                 <div className="flex items-center gap-3 w-2/3">
-                   <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${t.type === 'income' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>{t.type === 'income' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}</div>
+                   <div className={"w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 " + (t.type === 'income' ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600")}>
+                     {t.type === 'income' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                   </div>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-gray-800 truncate">{t.description}</p>
                       <div className="flex flex-wrap items-center gap-1 mt-0.5">
@@ -656,7 +667,7 @@ export default function App() {
                       </div>
                     </div>
                 </div>
-                <div className="text-right flex-shrink-0 ml-2"><p className={`text-sm font-bold ${t.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>{t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount, t.currency)}</p></div>
+                <div className="text-right flex-shrink-0 ml-2"><p className={"text-sm font-bold " + (t.type === 'income' ? "text-emerald-600" : "text-rose-600")}>{t.type === 'income' ? "+" : "-"}{formatCurrency(t.amount, t.currency)}</p></div>
               </div>
             ))}
           </div>
@@ -665,14 +676,11 @@ export default function App() {
     </div>
   );
 
-  // --- REWRITE FUNGSI EXPORT (BEBAS ERROR SYNTAX) ---
   const downloadCSV = () => {
     if (transactions.length === 0) {
       setNotification({ type: 'error', message: 'Tidak ada data.' });
       return;
     }
-    
-    // Gunakan string biasa dengan concat (+)
     const headers = "iso_date,tanggal_display,deskripsi,kategori,tipe,mata_uang,jumlah";
     const csvRows = [headers];
     
@@ -681,16 +689,13 @@ export default function App() {
       const isoDate = dateObj.toISOString().split('T')[0];
       const catString = t.categories ? t.categories.join(' & ') : (t.category || 'Umum');
       
-      // Susun baris secara manual menghindari template literal rumit
-      const row = 
-        isoDate + "," + 
-        "\"" + t.date + "\"," + 
-        "\"" + t.description.replace(/"/g, '""') + "\"," + 
-        "\"" + catString + "\"," + 
-        t.type + "," + 
-        (t.currency || 'IDR') + "," + 
-        t.amount;
-        
+      const row = isoDate + "," + 
+                  "\"" + t.date + "\"," + 
+                  "\"" + t.description.replace(/"/g, '""') + "\"," + 
+                  "\"" + catString + "\"," + 
+                  t.type + "," + 
+                  (t.currency || 'IDR') + "," + 
+                  t.amount;
       csvRows.push(row);
     });
     
@@ -806,7 +811,9 @@ export default function App() {
         <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Akun Saya</h3>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${user?.isAnonymous ? 'bg-gray-100' : 'bg-blue-100'}`}><User className={`w-6 h-6 ${user?.isAnonymous ? 'text-gray-400' : 'text-blue-600'}`} /></div>
+            <div className={"w-12 h-12 rounded-full flex items-center justify-center " + (user?.isAnonymous ? "bg-gray-100" : "bg-blue-100")}>
+              <User className={"w-6 h-6 " + (user?.isAnonymous ? "text-gray-400" : "text-blue-600")} />
+            </div>
             <div><p className="font-bold text-gray-900">{user?.isAnonymous ? 'Pengguna Tamu' : user?.displayName || 'Pengguna Google'}</p><p className="text-xs text-gray-500">{user?.isAnonymous ? 'Data tersimpan sementara' : user?.email}</p></div>
           </div>
           {user?.isAnonymous ? 
@@ -900,7 +907,7 @@ export default function App() {
         
         {notification && (
           <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-4 duration-300 w-full max-w-sm px-4">
-            <div className={`flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border ${notification.type === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-800' : 'bg-rose-50 border-rose-100 text-rose-800'}`}>
+            <div className={"flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border " + (notification.type === 'success' ? "bg-emerald-50 border-emerald-100 text-emerald-800" : "bg-rose-50 border-rose-100 text-rose-800")}>
               {notification.type === 'success' ? <CheckCircle className="w-5 h-5 flex-shrink-0" /> : <XCircle className="w-5 h-5 flex-shrink-0" />}<span className="text-sm font-medium">{notification.message}</span>
             </div>
           </div>
@@ -963,9 +970,9 @@ export default function App() {
 
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-2 z-30 md:max-w-md md:mx-auto md:bottom-4 md:rounded-2xl md:border md:shadow-xl">
           <div className="flex justify-around items-center">
-            <button onClick={() => setView('home')} className={`flex flex-col items-center p-2 rounded-xl flex-1 transition-all ${view === 'home' ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-gray-600'}`}><List className="w-6 h-6 mb-1" /><span className="text-xs font-medium">Transaksi</span></button>
-            <button onClick={() => setView('report')} className={`flex flex-col items-center p-2 rounded-xl flex-1 transition-all ${view === 'report' ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-gray-600'}`}><FileText className="w-6 h-6 mb-1" /><span className="text-xs font-medium">Laporan</span></button>
-            <button onClick={() => setView('settings')} className={`flex flex-col items-center p-2 rounded-xl flex-1 transition-all ${view === 'settings' ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-gray-600'}`}><Settings className="w-6 h-6 mb-1" /><span className="text-xs font-medium">Pengaturan</span></button>
+            <button onClick={() => setView('home')} className={"flex flex-col items-center p-2 rounded-xl flex-1 transition-all " + (view === 'home' ? "text-blue-600 bg-blue-50" : "text-gray-400 hover:text-gray-600")}><List className="w-6 h-6 mb-1" /><span className="text-xs font-medium">Transaksi</span></button>
+            <button onClick={() => setView('report')} className={"flex flex-col items-center p-2 rounded-xl flex-1 transition-all " + (view === 'report' ? "text-blue-600 bg-blue-50" : "text-gray-400 hover:text-gray-600")}><FileText className="w-6 h-6 mb-1" /><span className="text-xs font-medium">Laporan</span></button>
+            <button onClick={() => setView('settings')} className={"flex flex-col items-center p-2 rounded-xl flex-1 transition-all " + (view === 'settings' ? "text-blue-600 bg-blue-50" : "text-gray-400 hover:text-gray-600")}><Settings className="w-6 h-6 mb-1" /><span className="text-xs font-medium">Pengaturan</span></button>
           </div>
         </div>
       </div>
