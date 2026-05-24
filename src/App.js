@@ -30,7 +30,7 @@ import {
 } from 'firebase/firestore';
 
 // =====================================================================
-// MASUKKAN KUNCI RAHASIA (FIREBASE CONFIG) MILIKMU DI BAWAH INI
+// FIREBASE CONFIG SUDAH TERISI
 // =====================================================================
 const firebaseConfig = {
   apiKey: "AIzaSyA3GU59sJ0W9QKGyWZ3LjBffUnNoxp46MY",
@@ -69,7 +69,7 @@ export default function App() {
 
   const getCurrentDate = () => {
     const now = new Date();
-    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    return now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, '0') + "-" + String(now.getDate()).padStart(2, '0');
   };
 
   const currencies = [
@@ -195,7 +195,7 @@ export default function App() {
         style: 'currency', currency: currencyCode, minimumFractionDigits: 0, maximumFractionDigits: 2
       }).format(number);
     } catch (e) {
-      return currencyCode + ' ' + number;
+      return currencyCode + " " + number;
     }
   };
 
@@ -223,7 +223,7 @@ export default function App() {
     localStorage.setItem('gemini_api_key', val);
   };
 
-  // --- FUNGSI SCAN STRUK MENGGUNAKAN AI ---
+  // --- FUNGSI SCAN STRUK MENGGUNAKAN AI MURNI (AMAN DARI SYNTAX ERROR) ---
   const handleScanReceipt = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -241,17 +241,10 @@ export default function App() {
       try {
         const base64Data = reader.result.split(',')[1];
         
-        // Memisahkan string tanpa menggunakan karakter backtick agar tidak bentrok saat proses kompilasi
-        const prompt = "Anda adalah asisten pencatat keuangan. Analisis gambar struk/kuitansi ini. " +
-        "Ekstrak informasi berikut dan kembalikan HANYA dalam format JSON MURNI (tanpa format markdown, tanpa teks lain):\n" +
-        "{\n" +
-        '  "description": "Nama Toko atau Barang",\n' +
-        '  "amount": angka_total_belanja_tanpa_titik_atau_koma,\n' +
-        '  "date": "YYYY-MM-DD"\n' +
-        "}\n" +
-        "Jika tanggal tidak ada, gunakan tanggal hari ini.";
+        // String tunggal yang 100% aman untuk di-compile oleh React/Vercel
+        const prompt = "Anda adalah asisten pencatat keuangan. Analisis gambar struk/kuitansi ini. Ekstrak informasi berikut dan kembalikan HANYA dalam format JSON MURNI (tanpa format markdown, tanpa teks lain): { \"description\": \"Nama Toko atau Barang\", \"amount\": angka_total_belanja_tanpa_titik_atau_koma, \"date\": \"YYYY-MM-DD\" } Jika tanggal tidak ada, gunakan tanggal hari ini.";
 
-        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + geminiKey, {
+        const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + geminiKey, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -355,7 +348,7 @@ export default function App() {
     
     setSelectedCategories(cats); setCurrency(t.currency || 'IDR');
     const d = new Date(t.transactionDate || t.createdAt);
-    setDate(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'));
+    setDate(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, '0') + "-" + String(d.getDate()).padStart(2, '0'));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -405,12 +398,11 @@ export default function App() {
     return { groupedHomeTransactions: grouped, homeTransactionsCount: filtered.length };
   }, [transactions, homeViewDate]);
 
-  // Fungsi pembantu warna label agar kode JSX lebih bersih
   const getLabelClass = (cat) => {
-    if (!selectedCategories.includes(cat)) return 'bg-white text-gray-600 border-gray-200 hover:border-gray-300';
+    if (!selectedCategories.includes(cat)) return "bg-white text-gray-600 border-gray-200 hover:border-gray-300";
     return type === 'expense' 
-      ? 'bg-rose-600 text-white border-rose-600 shadow-sm' 
-      : 'bg-emerald-600 text-white border-emerald-600 shadow-sm';
+      ? "bg-rose-600 text-white border-rose-600 shadow-sm" 
+      : "bg-emerald-600 text-white border-emerald-600 shadow-sm";
   };
 
   const renderHomeView = () => {
@@ -479,7 +471,7 @@ export default function App() {
               <div className="flex flex-wrap gap-2">
                 {(type === 'expense' ? expenseCategories : incomeCategories).map((cat) => (
                   <button 
-                    key={'label-' + cat} 
+                    key={"label-" + cat} 
                     type="button" 
                     onClick={() => toggleCategory(cat)} 
                     className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${getLabelClass(cat)}`}
@@ -530,7 +522,7 @@ export default function App() {
                             <h4 className="font-semibold text-gray-800 text-sm truncate">{t.description}</h4>
                             <div className="flex flex-wrap gap-1 mt-1">
                               {(t.categories || (t.category ? [t.category] : ['Umum'])).map(catLabel => (
-                                <span key={t.id + '-' + catLabel} className="text-[9px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">{catLabel}</span>
+                                <span key={t.id + "-" + catLabel} className="text-[9px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">{catLabel}</span>
                               ))}
                             </div>
                           </div>
@@ -595,17 +587,13 @@ export default function App() {
   };
 
   const getBalanceColorClass = () => {
-     if (reportSummary.balance >= 0) {
-        return 'bg-blue-50 border-blue-100';
-     }
-     return 'bg-orange-50 border-orange-100';
+     if (reportSummary.balance >= 0) return "bg-blue-50 border-blue-100";
+     return "bg-orange-50 border-orange-100";
   };
 
   const getBalanceTextClass = () => {
-     if (reportSummary.balance >= 0) {
-        return 'text-blue-700';
-     }
-     return 'text-orange-700';
+     if (reportSummary.balance >= 0) return "text-blue-700";
+     return "text-orange-700";
   };
 
   const renderReportView = () => (
@@ -646,7 +634,7 @@ export default function App() {
             {categoryStats.map((cat) => (
               <div key={cat.name}>
                 <div className="flex justify-between text-sm mb-1"><span className="text-gray-700 font-medium">{cat.name}</span><div className="text-right"><span className="text-gray-900 font-bold">{formatCurrency(cat.amount, reportCurrency)}</span><span className="text-xs text-gray-500 ml-1">({Math.round(cat.percentage)}%)</span></div></div>
-                <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden"><div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${cat.percentage}%` }}></div></div>
+                <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden"><div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style={{ width: String(cat.percentage) + "%" }}></div></div>
               </div>
             ))}
           </div>
@@ -665,7 +653,7 @@ export default function App() {
                       <div className="flex flex-wrap items-center gap-1 mt-0.5">
                         <span className="text-[9px] text-gray-400">{t.date}</span>
                         {(t.categories || (t.category ? [t.category] : ['Umum'])).map(catLabel => (
-                           <span key={`rep-${t.id}-${catLabel}`} className="text-[8px] bg-gray-100 text-gray-600 px-1 py-0.5 rounded font-medium">{catLabel}</span>
+                           <span key={"rep-" + t.id + "-" + catLabel} className="text-[8px] bg-gray-100 text-gray-600 px-1 py-0.5 rounded font-medium">{catLabel}</span>
                         ))}
                       </div>
                     </div>
@@ -819,7 +807,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* --- PENGATURAN API KEY GEMINI UNTUK FITUR SCAN STRUK --- */}
       <div className="bg-white rounded-2xl shadow-sm border border-purple-100 p-5 mb-6 relative overflow-hidden">
         <div className="absolute top-0 right-0 p-4 opacity-10"><Sparkles className="w-16 h-16 text-purple-600" /></div>
         <h3 className="text-sm font-bold text-purple-600 uppercase tracking-wider mb-2 flex items-center gap-2"><Sparkles className="w-4 h-4" /> Fitur AI Scan Struk</h3>
@@ -841,7 +828,6 @@ export default function App() {
           )}
         </div>
       </div>
-      {/* -------------------------------------------------------- */}
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
         <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Kategori Label</h3>
