@@ -1,4 +1,4 @@
-react
+```react
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Plus, Trash2, Wallet, TrendingUp, TrendingDown, DollarSign, 
@@ -223,7 +223,6 @@ export default function App() {
     localStorage.setItem('gemini_api_key', val);
   };
 
-  // --- FUNGSI SCAN STRUK MENGGUNAKAN AI MURNI (AMAN DARI SYNTAX ERROR) ---
   const handleScanReceipt = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -241,7 +240,6 @@ export default function App() {
       try {
         const base64Data = reader.result.split(',')[1];
         
-        // String tunggal yang 100% aman untuk di-compile oleh React/Vercel
         const prompt = "Anda adalah asisten pencatat keuangan. Analisis gambar struk/kuitansi ini. Ekstrak informasi berikut dan kembalikan HANYA dalam format JSON MURNI (tanpa format markdown, tanpa teks lain): { \"description\": \"Nama Toko atau Barang\", \"amount\": angka_total_belanja_tanpa_titik_atau_koma, \"date\": \"YYYY-MM-DD\" } Jika tanggal tidak ada, gunakan tanggal hari ini.";
 
         const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + geminiKey, {
@@ -667,24 +665,35 @@ export default function App() {
     </div>
   );
 
+  // --- REWRITE FUNGSI EXPORT (BEBAS ERROR SYNTAX) ---
   const downloadCSV = () => {
     if (transactions.length === 0) {
       setNotification({ type: 'error', message: 'Tidak ada data.' });
       return;
     }
-    const headers = ['iso_date', 'tanggal_display', 'deskripsi', 'kategori', 'tipe', 'mata_uang', 'jumlah'];
-    const csvRows = [headers.join(',')];
+    
+    // Gunakan string biasa dengan concat (+)
+    const headers = "iso_date,tanggal_display,deskripsi,kategori,tipe,mata_uang,jumlah";
+    const csvRows = [headers];
+    
     transactions.forEach(t => {
       const dateObj = new Date(t.transactionDate || t.createdAt);
       const isoDate = dateObj.toISOString().split('T')[0];
       const catString = t.categories ? t.categories.join(' & ') : (t.category || 'Umum');
       
-      const row = [
-        isoDate, '"' + t.date + '"', '"' + t.description.replace(/"/g, '""') + '"', 
-        '"' + catString + '"', t.type, t.currency || 'IDR', t.amount
-      ];
-      csvRows.push(row.join(','));
+      // Susun baris secara manual menghindari template literal rumit
+      const row = 
+        isoDate + "," + 
+        "\"" + t.date + "\"," + 
+        "\"" + t.description.replace(/"/g, '""') + "\"," + 
+        "\"" + catString + "\"," + 
+        t.type + "," + 
+        (t.currency || 'IDR') + "," + 
+        t.amount;
+        
+      csvRows.push(row);
     });
+    
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
