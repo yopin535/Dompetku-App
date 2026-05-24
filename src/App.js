@@ -222,7 +222,7 @@ export default function App() {
     localStorage.setItem('gemini_api_key', val);
   };
 
-  // --- FUNGSI SCAN STRUK AI (DIPERBAIKI SECARA FUNDAMENTAL) ---
+  // --- FUNGSI SCAN STRUK AI (GEMINI 2.5 FLASH + HEIC SUPPORT) ---
   const handleScanReceipt = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -240,53 +240,45 @@ export default function App() {
       try {
         const base64Data = reader.result.split(',')[1];
         
-        // 1. MENGATASI MASALAH FORMAT HEIC DI HP
+        // 1. Dukungan Format Foto .heic agar tidak ditolak sistem
         let mimeType = file.type;
         if (!mimeType) {
           if (file.name.toLowerCase().endsWith('.heic')) {
             mimeType = 'image/heic';
           } else {
-            mimeType = 'image/jpeg'; // Fallback
+            mimeType = 'image/jpeg';
           }
         }
+        
+        // 2. Instruksi (Prompt) yang bebas error sintaks
+        const prompt = "Anda adalah asisten pencatat keuangan. Analisis gambar struk ini. " +
+        "Temukan Nama Toko, Total Harga Akhir (hilangkan koma/simbol mata uang), Tanggal (format YYYY-MM-DD), dan tentukan kode Mata Uang (JPY, IDR, USD). " +
+        "Kembalikan HANYA dalam format JSON MURNI (tanpa format markdown, tanpa teks lain): " +
+        "{ \"description\": \"Nama Toko\", \"amount\": angka_bulat, \"date\": \"YYYY-MM-DD\", \"currency\": \"JPY\" }";
 
-        // 2. MENGGUNAKAN MODE STRICT JSON BAWAAN GEMINI 1.5
-        // (Ini memastikan balasan pasti JSON, tidak ada teks markdown sama sekali)
-        const payload = {
-          contents: [{
-            parts: [
-              { text: "Ekstrak data dari struk ini. Temukan: description (Nama Toko/Barang Utama), amount (Total bayar HANYA angka, tanpa titik/koma/simbol), date (format YYYY-MM-DD), dan currency (Kode mata uang JPY, IDR, USD)." },
-              { inlineData: { mimeType: mimeType, data: base64Data } }
-            ]
-          }],
-          generationConfig: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: "OBJECT",
-              properties: {
-                description: { type: "STRING" },
-                amount: { type: "INTEGER" },
-                date: { type: "STRING" },
-                currency: { type: "STRING" }
-              }
-            }
-          }
-        };
-
-        const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + geminiKey, {
+        // 3. Update Model ke gemini-2.5-flash
+        const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + geminiKey, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: mimeType, data: base64Data } }] }]
+          })
         });
 
         const data = await response.json();
         
-        // 3. PESAN ERROR TRANSPARAN (Jika API Key salah, akan tertulis disini)
+        // Memunculkan pesan error spesifik jika API Key / Kuota bermasalah
         if (data.error) throw new Error(data.error.message);
 
-        // Hasil pasti berupa JSON murni, tidak perlu dipotong-potong lagi
         const aiText = data.candidates[0].content.parts[0].text;
-        const result = JSON.parse(aiText);
+        
+        // Pembersihan Markdown otomatis tanpa backticks
+        let cleanJson = aiText;
+        cleanJson = cleanJson.split("```json").join("");
+        cleanJson = cleanJson.split("```").join("");
+        cleanJson = cleanJson.trim();
+        
+        const result = JSON.parse(cleanJson);
 
         if (result.description) setDescription(result.description);
         if (result.amount) setAmount(result.amount.toString());
@@ -301,11 +293,10 @@ export default function App() {
 
       } catch (error) {
         console.error("AI Scan Error:", error);
-        // Menampilkan pesan error asli (Misal: API Key Invalid, dsb)
         setNotification({ type: 'error', message: "Error: " + (error.message || "Gagal memproses gambar") });
       } finally {
         setIsScanning(false);
-        e.target.value = null; // Reset input
+        e.target.value = null;
       }
     };
   };
@@ -456,7 +447,6 @@ export default function App() {
             
             {!editId && (
               <div>
-                {/* Tombol input file untuk buka galeri atau kamera */}
                 <input type="file" accept="image/*" ref={receiptInputRef} onChange={handleScanReceipt} className="hidden" />
                 <button type="button" onClick={() => receiptInputRef.current?.click()} className="flex items-center gap-1.5 text-xs font-bold bg-purple-50 text-purple-700 px-3 py-1.5 rounded-full border border-purple-100 hover:bg-purple-100 transition-colors">
                   <Camera className="w-3.5 h-3.5" /> Scan Struk
@@ -928,7 +918,7 @@ export default function App() {
         <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data</button>
       </div>
       
-      <div className="text-center text-xs text-gray-300 pb-8">Dompetku Cloud v2.1.0 (AI Edition)</div>
+      <div className="text-center text-xs text-gray-300 pb-8">Dompetku Cloud v2.2.0 (AI Edition)</div>
     </div>
   );
 
@@ -1011,4 +1001,4 @@ export default function App() {
       </div>
     </div>
   );
-            }
+  }
