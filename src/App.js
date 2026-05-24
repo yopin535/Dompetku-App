@@ -30,7 +30,7 @@ import {
 } from 'firebase/firestore';
 
 // =====================================================================
-// FIREBASE CONFIG MILIKMU
+// FIREBASE CONFIG MILIKMU (Sudah Diterapkan)
 // =====================================================================
 const firebaseConfig = {
   apiKey: "AIzaSyA3GU59sJ0W9QKGyWZ3LjBffUnNoxp46MY",
@@ -223,6 +223,7 @@ export default function App() {
     localStorage.setItem('gemini_api_key', val);
   };
 
+  // --- FUNGSI SCAN STRUK AI (100% AMAN DARI ERROR COPY PASTE HP) ---
   const handleScanReceipt = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -240,13 +241,23 @@ export default function App() {
       try {
         const base64Data = reader.result.split(',')[1];
         
-        const prompt = "Anda adalah asisten pencatat keuangan. Analisis gambar struk/kuitansi ini. Ekstrak informasi berikut dan kembalikan HANYA dalam format JSON MURNI (tanpa format markdown, tanpa teks lain): { \"description\": \"Nama Toko atau Barang\", \"amount\": angka_total_belanja_tanpa_titik_atau_koma, \"date\": \"YYYY-MM-DD\" } Jika tanggal tidak ada, gunakan tanggal hari ini.";
+        // Membungkus instruksi sebagai Object agar tidak perlu backslash untuk kutip
+        const promptObj = {
+          instruksi: "Anda adalah asisten keuangan. Analisis gambar struk ini. Ekstrak data dan kembalikan HANYA format JSON MURNI tanpa teks apapun.",
+          format: {
+            description: "Nama Toko atau Barang",
+            amount: 150000,
+            date: "YYYY-MM-DD"
+          },
+          catatan: "Gunakan tanggal hari ini jika tidak ada. Amount harus angka bulat tanpa pemisah ribuan."
+        };
+        const promptText = JSON.stringify(promptObj);
 
         const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + geminiKey, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: file.type, data: base64Data } }] }]
+            contents: [{ parts: [{ text: promptText }, { inlineData: { mimeType: file.type, data: base64Data } }] }]
           })
         });
 
@@ -256,10 +267,11 @@ export default function App() {
 
         const aiText = data.candidates[0].content.parts[0].text;
         
-        // Membersihkan format markdown dengan aman menggunakan RegExp Object
-        const regexJson = new RegExp("```json", "gi");
-        const regexTick = new RegExp("```", "g");
-        const cleanJson = aiText.replace(regexJson, '').replace(regexTick, '').trim();
+        // Membersihkan string tanpa regex rumit
+        let cleanJson = aiText;
+        cleanJson = cleanJson.split("```json").join("");
+        cleanJson = cleanJson.split("```").join("");
+        cleanJson = cleanJson.trim();
         
         const result = JSON.parse(cleanJson);
 
@@ -272,7 +284,7 @@ export default function App() {
 
       } catch (error) {
         console.error(error);
-        setNotification({ type: 'error', message: 'Gagal membaca struk. Pastikan API Key valid & gambar jelas.' });
+        setNotification({ type: 'error', message: 'Gagal membaca struk. Pastikan gambar jelas & API Key benar.' });
       } finally {
         setIsScanning(false);
         e.target.value = null;
@@ -676,6 +688,7 @@ export default function App() {
     </div>
   );
 
+  // --- REWRITE FUNGSI EXPORT (BEBAS ERROR SYNTAX & BEBAS BACKSLASH) ---
   const downloadCSV = () => {
     if (transactions.length === 0) {
       setNotification({ type: 'error', message: 'Tidak ada data.' });
@@ -689,10 +702,12 @@ export default function App() {
       const isoDate = dateObj.toISOString().split('T')[0];
       const catString = t.categories ? t.categories.join(' & ') : (t.category || 'Umum');
       
+      const cleanDesc = t.description.split('"').join('""');
+      
       const row = isoDate + "," + 
-                  "\"" + t.date + "\"," + 
-                  "\"" + t.description.replace(/"/g, '""') + "\"," + 
-                  "\"" + catString + "\"," + 
+                  '"' + t.date + '",' + 
+                  '"' + cleanDesc + '",' + 
+                  '"' + catString + '",' + 
                   t.type + "," + 
                   (t.currency || 'IDR') + "," + 
                   t.amount;
