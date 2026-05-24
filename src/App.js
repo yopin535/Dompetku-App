@@ -69,7 +69,7 @@ export default function App() {
 
   const getCurrentDate = () => {
     const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
   };
 
   const currencies = [
@@ -195,7 +195,7 @@ export default function App() {
         style: 'currency', currency: currencyCode, minimumFractionDigits: 0, maximumFractionDigits: 2
       }).format(number);
     } catch (e) {
-      return `${currencyCode} ${number}`;
+      return currencyCode + ' ' + number;
     }
   };
 
@@ -241,16 +241,17 @@ export default function App() {
       try {
         const base64Data = reader.result.split(',')[1];
         
-        const prompt = `Anda adalah asisten pencatat keuangan. Analisis gambar struk/kuitansi ini. 
-        Ekstrak informasi berikut dan kembalikan HANYA dalam format JSON MURNI (tanpa markdown \`\`\`json, tanpa teks lain):
-        {
-          "description": "Nama Toko atau Barang",
-          "amount": angka_total_belanja_tanpa_titik_atau_koma,
-          "date": "YYYY-MM-DD"
-        }
-        Jika tanggal tidak ada, gunakan tanggal hari ini.`;
+        // Memisahkan string tanpa menggunakan karakter backtick agar tidak bentrok saat proses kompilasi
+        const prompt = "Anda adalah asisten pencatat keuangan. Analisis gambar struk/kuitansi ini. " +
+        "Ekstrak informasi berikut dan kembalikan HANYA dalam format JSON MURNI (tanpa format markdown, tanpa teks lain):\n" +
+        "{\n" +
+        '  "description": "Nama Toko atau Barang",\n' +
+        '  "amount": angka_total_belanja_tanpa_titik_atau_koma,\n' +
+        '  "date": "YYYY-MM-DD"\n' +
+        "}\n" +
+        "Jika tanggal tidak ada, gunakan tanggal hari ini.";
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
+        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + geminiKey, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -263,7 +264,6 @@ export default function App() {
         if (data.error) throw new Error(data.error.message);
 
         const aiText = data.candidates[0].content.parts[0].text;
-        // Bersihkan jika AI masih membalas dengan format markdown
         const cleanJson = aiText.replace(/```json/g, '').replace(/```/g, '').trim();
         const result = JSON.parse(cleanJson);
 
@@ -355,7 +355,7 @@ export default function App() {
     
     setSelectedCategories(cats); setCurrency(t.currency || 'IDR');
     const d = new Date(t.transactionDate || t.createdAt);
-    setDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    setDate(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -405,11 +405,17 @@ export default function App() {
     return { groupedHomeTransactions: grouped, homeTransactionsCount: filtered.length };
   }, [transactions, homeViewDate]);
 
+  // Fungsi pembantu warna label agar kode JSX lebih bersih
+  const getLabelClass = (cat) => {
+    if (!selectedCategories.includes(cat)) return 'bg-white text-gray-600 border-gray-200 hover:border-gray-300';
+    return type === 'expense' 
+      ? 'bg-rose-600 text-white border-rose-600 shadow-sm' 
+      : 'bg-emerald-600 text-white border-emerald-600 shadow-sm';
+  };
+
   const renderHomeView = () => {
     return (
       <div className="animate-in fade-in duration-300">
-        
-        {/* Form Tambah/Edit Transaksi */}
         <div className={`bg-white rounded-2xl shadow-sm border p-5 mt-2 mb-6 transition-all relative overflow-hidden ${editId ? 'border-blue-300 ring-4 ring-blue-50' : 'border-gray-100'}`}>
           {isScanning && (
             <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
@@ -423,7 +429,6 @@ export default function App() {
               {editId ? <Edit2 className="w-5 h-5 text-blue-600" /> : 'Tambah Transaksi'}
             </h3>
             
-            {/* Tombol Scan Struk AI */}
             {!editId && (
               <div>
                 <input type="file" accept="image/*" capture="environment" ref={receiptInputRef} onChange={handleScanReceipt} className="hidden" />
@@ -473,7 +478,14 @@ export default function App() {
               <label className="block text-xs font-medium text-gray-500 mb-2">Label Kategori (Pilih 1 atau lebih)</label>
               <div className="flex flex-wrap gap-2">
                 {(type === 'expense' ? expenseCategories : incomeCategories).map((cat) => (
-                  <button key={`label-${cat}`} type="button" onClick={() => toggleCategory(cat)} className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${selectedCategories.includes(cat) ? (type === 'expense' ? 'bg-rose-600 text-white border-rose-600 shadow-sm' : 'bg-emerald-600 text-white border-emerald-600 shadow-sm') : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}>{cat}</button>
+                  <button 
+                    key={'label-' + cat} 
+                    type="button" 
+                    onClick={() => toggleCategory(cat)} 
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${getLabelClass(cat)}`}
+                  >
+                    {cat}
+                  </button>
                 ))}
                 <button type="button" onClick={() => setShowCatModal(true)} className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-blue-600 hover:bg-gray-200 transition-all flex items-center gap-1"><Plus className="w-3 h-3" /> Tambah</button>
               </div>
@@ -489,7 +501,6 @@ export default function App() {
           </form>
         </div>
 
-        {/* Daftar Riwayat */}
         <div>
           <div className="flex items-center justify-between mb-4 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
             <button type="button" onClick={() => changeHomeMonth(-1)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
@@ -519,7 +530,7 @@ export default function App() {
                             <h4 className="font-semibold text-gray-800 text-sm truncate">{t.description}</h4>
                             <div className="flex flex-wrap gap-1 mt-1">
                               {(t.categories || (t.category ? [t.category] : ['Umum'])).map(catLabel => (
-                                <span key={`${t.id}-${catLabel}`} className="text-[9px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">{catLabel}</span>
+                                <span key={t.id + '-' + catLabel} className="text-[9px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">{catLabel}</span>
                               ))}
                             </div>
                           </div>
@@ -583,6 +594,20 @@ export default function App() {
     return '';
   };
 
+  const getBalanceColorClass = () => {
+     if (reportSummary.balance >= 0) {
+        return 'bg-blue-50 border-blue-100';
+     }
+     return 'bg-orange-50 border-orange-100';
+  };
+
+  const getBalanceTextClass = () => {
+     if (reportSummary.balance >= 0) {
+        return 'text-blue-700';
+     }
+     return 'text-orange-700';
+  };
+
   const renderReportView = () => (
     <div className="animate-in fade-in duration-300">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
@@ -611,11 +636,11 @@ export default function App() {
           <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100"><p className="text-xs text-emerald-600 mb-1">Pemasukan</p><p className="font-bold text-emerald-700">{formatCurrency(reportSummary.income, reportCurrency)}</p></div>
           <div className="bg-rose-50 p-3 rounded-xl border border-rose-100"><p className="text-xs text-rose-600 mb-1">Pengeluaran</p><p className="font-bold text-rose-700">{formatCurrency(reportSummary.expense, reportCurrency)}</p></div>
         </div>
-        <div className={`text-center p-4 rounded-xl border mb-8 ${reportSummary.balance >= 0 ? 'bg-blue-50 border-blue-100' : 'bg-orange-50 border-orange-100'}`}>
+        <div className={`text-center p-4 rounded-xl border mb-8 ${getBalanceColorClass()}`}>
           <p className="text-xs text-gray-500 mb-1">Arus Kas Bersih (Net Cashflow)</p>
-          <p className={`text-2xl font-bold ${reportSummary.balance >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>{reportSummary.balance >= 0 ? '+' : ''}{formatCurrency(reportSummary.balance, reportCurrency)}</p>
+          <p className={`text-2xl font-bold ${getBalanceTextClass()}`}>{reportSummary.balance >= 0 ? '+' : ''}{formatCurrency(reportSummary.balance, reportCurrency)}</p>
         </div>
-        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><PieChart className="w-4 h-4 text-gray-500" /> Statistik Pengeluaran</h3>
+        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><PieChart className="w-4 h-4 text-gray-500" /> Statistik Pengeluaran (Berdasarkan Label Utama)</h3>
         {categoryStats.length === 0 ? <div className="text-center py-8 text-gray-400 text-sm">Belum ada data.</div> : (
           <div className="space-y-4">
             {categoryStats.map((cat) => (
@@ -653,6 +678,128 @@ export default function App() {
       </div>
     </div>
   );
+
+  const downloadCSV = () => {
+    if (transactions.length === 0) {
+      setNotification({ type: 'error', message: 'Tidak ada data.' });
+      return;
+    }
+    const headers = ['iso_date', 'tanggal_display', 'deskripsi', 'kategori', 'tipe', 'mata_uang', 'jumlah'];
+    const csvRows = [headers.join(',')];
+    transactions.forEach(t => {
+      const dateObj = new Date(t.transactionDate || t.createdAt);
+      const isoDate = dateObj.toISOString().split('T')[0];
+      const catString = t.categories ? t.categories.join(' & ') : (t.category || 'Umum');
+      
+      const row = [
+        isoDate, '"' + t.date + '"', '"' + t.description.replace(/"/g, '""') + '"', 
+        '"' + catString + '"', t.type, t.currency || 'IDR', t.amount
+      ];
+      csvRows.push(row.join(','));
+    });
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'Backup_Dompetku.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportClick = () => fileInputRef.current?.click();
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const rows = event.target.result.split('\n');
+        let importedCount = 0;
+        setLoading(true); setSyncStatus('saving');
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i].trim();
+          if (!row) continue;
+          const matches = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
+          const cols = matches || row.split(',');
+          if (cols && cols.length >= 6) {
+            const clean = (str) => str ? str.replace(/^"|"$/g, '').replace(/""/g, '"') : '';
+            const isoDate = clean(cols[0]);
+            const description = clean(cols[2]);
+            const categoryRaw = clean(cols[3]);
+            const type = clean(cols[4]);
+            
+            const catsArray = categoryRaw.split(' & ').map(c => c.trim()).filter(Boolean);
+
+            let curr = 'IDR'; let amt = 0;
+            if (cols.length === 7) { curr = clean(cols[5]); amt = parseFloat(clean(cols[6])); } 
+            else { amt = parseFloat(clean(cols[5])); }
+            
+            if (isoDate && description && !isNaN(amt)) {
+              const dateObj = new Date(isoDate);
+              await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), {
+                description, amount: amt, type: type.includes('income') || type.includes('Pemasukan') ? 'income' : 'expense',
+                categories: catsArray.length > 0 ? catsArray : ['Umum'],
+                category: catsArray[0] || 'Umum',
+                currency: curr,
+                date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+                transactionDate: dateObj.getTime(), createdAt: Date.now()
+              });
+              importedCount++;
+            }
+          }
+        }
+        setLoading(false); setNotification({ type: 'success', message: 'Berhasil mengimpor ' + importedCount + ' transaksi.' });
+        e.target.value = null;
+      } catch (error) {
+        setLoading(false); setNotification({ type: 'error', message: 'Gagal import.' });
+      } finally { setSyncStatus('synced'); }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleResetData = async () => {
+    if (!user) return;
+    setLoading(true); setSyncStatus('saving'); setShowResetModal(false);
+    try {
+      const batch = writeBatch(db);
+      const transSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'));
+      transSnapshot.forEach((doc) => batch.delete(doc.ref));
+      const catSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'categories'));
+      catSnapshot.forEach((doc) => batch.delete(doc.ref));
+      await batch.commit();
+      setTransactions([]); setCustomCategories([]);
+      setNotification({ type: 'success', message: 'Data direset.' });
+    } catch (error) {
+      setNotification({ type: 'error', message: 'Gagal mereset.' });
+    } finally { setLoading(false); setSyncStatus('synced'); }
+  };
+
+  const confirmGenerateDummy = async () => {
+    if (!user) return;
+    setShowDummyModal(false); setLoading(true); setSyncStatus('saving');
+    try {
+      const dummyData = [
+        { desc: 'Gaji Bulanan', amount: 5000000, type: 'income', cats: ['Gaji'], dayOffset: 0, curr: 'IDR' },
+        { desc: 'Makan Siang', amount: 25000, type: 'expense', cats: ['Makanan'], dayOffset: 1, curr: 'IDR' },
+        { desc: 'Ongkos & Jajan', amount: 45000, type: 'expense', cats: ['Transportasi', 'Hiburan'], dayOffset: 2, curr: 'IDR' }
+      ];
+      const now = new Date();
+      for (const item of dummyData) {
+        const dateObj = new Date(now); dateObj.setDate(dateObj.getDate() - item.dayOffset);
+        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), {
+          description: item.desc, amount: item.amount, type: item.type, 
+          categories: item.cats, category: item.cats[0], currency: item.curr,
+          date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+          transactionDate: dateObj.getTime(), createdAt: Date.now()
+        });
+      }
+      setNotification({ type: 'success', message: 'Demo ditambahkan.' });
+    } catch (error) {
+      setNotification({ type: 'error', message: 'Gagal membuat demo.' });
+    } finally { setLoading(false); setSyncStatus('synced'); }
+  };
 
   const renderSettingsView = () => (
     <div className="animate-in fade-in duration-300">
@@ -716,6 +863,31 @@ export default function App() {
         </div>
       </div>
 
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
+        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Manajemen Data</h3>
+        <div className="space-y-3">
+          <button onClick={downloadCSV} disabled={transactions.length === 0} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 transition-all group">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-100 p-2 rounded-lg group-hover:bg-blue-200 transition-colors"><Download className="w-5 h-5 text-blue-600" /></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Export ke Excel</p><p className="text-xs text-gray-400">Unduh file .csv untuk arsip</p></div>
+            </div>
+          </button>
+          <button onClick={handleImportClick} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-200 hover:border-emerald-200 transition-all group">
+             <div className="flex items-center gap-3">
+              <div className="bg-emerald-100 p-2 rounded-lg group-hover:bg-emerald-200 transition-colors"><Upload className="w-5 h-5 text-emerald-600" /></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Restore Data</p><p className="text-xs text-gray-400">Kembalikan data dari file backup</p></div>
+            </div>
+          </button>
+          <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv" className="hidden" />
+          <button onClick={() => setShowDummyModal(true)} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-purple-50 border border-gray-200 hover:border-purple-200 transition-all group">
+             <div className="flex items-center gap-3">
+              <div className="bg-purple-100 p-2 rounded-lg group-hover:bg-purple-200 transition-colors"><Sparkles className="w-5 h-5 text-purple-600" /></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Isi Data Demo</p><p className="text-xs text-gray-400">Buat transaksi contoh otomatis</p></div>
+            </div>
+          </button>
+        </div>
+      </div>
+
       <div className="bg-white rounded-2xl shadow-sm border border-red-100 p-5 mb-6">
         <h3 className="text-sm font-bold text-red-500 uppercase tracking-wider mb-4 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> Zona Bahaya</h3>
         <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data</button>
@@ -737,6 +909,10 @@ export default function App() {
               {notification.type === 'success' ? <CheckCircle className="w-5 h-5 flex-shrink-0" /> : <XCircle className="w-5 h-5 flex-shrink-0" />}<span className="text-sm font-medium">{notification.message}</span>
             </div>
           </div>
+        )}
+
+        {showDummyModal && (
+          <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4"><div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl"><div className="flex flex-col items-center text-center mb-6"><div className="bg-purple-100 p-3 rounded-full mb-4"><Sparkles className="w-8 h-8 text-purple-600" /></div><h3 className="font-bold text-xl text-gray-900">Isi Data Demo?</h3></div><div className="flex gap-3"><button onClick={() => setShowDummyModal(false)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition-colors">Batal</button><button onClick={confirmGenerateDummy} className="flex-1 py-3 rounded-xl bg-purple-600 text-white font-medium hover:bg-purple-700 transition-colors shadow-lg shadow-purple-200">Ya, Tambahkan</button></div></div></div>
         )}
 
         {showResetModal && (
