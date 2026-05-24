@@ -1,4 +1,4 @@
-``react
+react
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Plus, Trash2, Wallet, TrendingUp, TrendingDown, DollarSign, 
