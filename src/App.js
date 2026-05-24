@@ -222,7 +222,7 @@ export default function App() {
     localStorage.setItem('gemini_api_key', val);
   };
 
-  // --- FUNGSI SCAN STRUK AI (DI TINGKATKAN) ---
+  // --- FUNGSI SCAN STRUK AI (DIPERBAIKI SECARA FUNDAMENTAL) ---
   const handleScanReceipt = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -240,41 +240,53 @@ export default function App() {
       try {
         const base64Data = reader.result.split(',')[1];
         
-        // Membungkus instruksi sebagai Object agar lebih cerdas membaca bahasa asing/simbol
-        const promptObj = {
-          instruksi: "Anda adalah asisten keuangan yang cerdas. Analisis gambar struk (receipt) ini. Struk mungkin dalam bahasa Jepang (seperti TRIAL, Lawson, dll), Indonesia, atau Inggris. Temukan Nama Toko, Total Harga Akhir (hilangkan koma/simbol mata uang), Tanggal (format YYYY-MM-DD), dan tentukan kode Mata Uang (JPY, IDR, USD). Kembalikan HANYA format JSON MURNI tanpa teks markdown.",
-          format: {
-            description: "Nama Toko (misal: TRIAL Yachimata, Indomaret)",
-            amount: 3849,
-            date: "YYYY-MM-DD",
-            currency: "JPY"
-          },
-          catatan: "Pastikan 'amount' berupa ANGKA BULAT (Number), hilangkan koma atau titik. Contoh: '¥3,849' menjadi 3849. Jika gagal menemukan tanggal, gunakan tanggal hari ini."
-        };
-        const promptText = JSON.stringify(promptObj);
+        // 1. MENGATASI MASALAH FORMAT HEIC DI HP
+        let mimeType = file.type;
+        if (!mimeType) {
+          if (file.name.toLowerCase().endsWith('.heic')) {
+            mimeType = 'image/heic';
+          } else {
+            mimeType = 'image/jpeg'; // Fallback
+          }
+        }
 
-        // Menggunakan model 'gemini-1.5-pro' yang lebih canggih untuk baca struk kompleks
-        const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=" + geminiKey, {
+        // 2. MENGGUNAKAN MODE STRICT JSON BAWAAN GEMINI 1.5
+        // (Ini memastikan balasan pasti JSON, tidak ada teks markdown sama sekali)
+        const payload = {
+          contents: [{
+            parts: [
+              { text: "Ekstrak data dari struk ini. Temukan: description (Nama Toko/Barang Utama), amount (Total bayar HANYA angka, tanpa titik/koma/simbol), date (format YYYY-MM-DD), dan currency (Kode mata uang JPY, IDR, USD)." },
+              { inlineData: { mimeType: mimeType, data: base64Data } }
+            ]
+          }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "OBJECT",
+              properties: {
+                description: { type: "STRING" },
+                amount: { type: "INTEGER" },
+                date: { type: "STRING" },
+                currency: { type: "STRING" }
+              }
+            }
+          }
+        };
+
+        const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + geminiKey, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: promptText }, { inlineData: { mimeType: file.type, data: base64Data } }] }]
-          })
+          body: JSON.stringify(payload)
         });
 
         const data = await response.json();
         
+        // 3. PESAN ERROR TRANSPARAN (Jika API Key salah, akan tertulis disini)
         if (data.error) throw new Error(data.error.message);
 
+        // Hasil pasti berupa JSON murni, tidak perlu dipotong-potong lagi
         const aiText = data.candidates[0].content.parts[0].text;
-        
-        // Membersihkan string tanpa regex rumit
-        let cleanJson = aiText;
-        cleanJson = cleanJson.split("```json").join("");
-        cleanJson = cleanJson.split("```").join("");
-        cleanJson = cleanJson.trim();
-        
-        const result = JSON.parse(cleanJson);
+        const result = JSON.parse(aiText);
 
         if (result.description) setDescription(result.description);
         if (result.amount) setAmount(result.amount.toString());
@@ -284,12 +296,13 @@ export default function App() {
         }
         
         setType('expense');
-        setSelectedCategories(['Belanja']); // Set kategori default ke Belanja setelah scan
+        setSelectedCategories(['Belanja']); 
         setNotification({ type: 'success', message: 'Berhasil membaca struk!' });
 
       } catch (error) {
-        console.error(error);
-        setNotification({ type: 'error', message: 'Gagal membaca struk. Pastikan gambar jelas & API Key benar.' });
+        console.error("AI Scan Error:", error);
+        // Menampilkan pesan error asli (Misal: API Key Invalid, dsb)
+        setNotification({ type: 'error', message: "Error: " + (error.message || "Gagal memproses gambar") });
       } finally {
         setIsScanning(false);
         e.target.value = null; // Reset input
@@ -443,9 +456,7 @@ export default function App() {
             
             {!editId && (
               <div>
-                {/* Tombol input file sudah diperbaiki.
-                  Atribut `capture="environment"` DIHAPUS agar opsi Galeri terbuka di HP Android
-                */}
+                {/* Tombol input file untuk buka galeri atau kamera */}
                 <input type="file" accept="image/*" ref={receiptInputRef} onChange={handleScanReceipt} className="hidden" />
                 <button type="button" onClick={() => receiptInputRef.current?.click()} className="flex items-center gap-1.5 text-xs font-bold bg-purple-50 text-purple-700 px-3 py-1.5 rounded-full border border-purple-100 hover:bg-purple-100 transition-colors">
                   <Camera className="w-3.5 h-3.5" /> Scan Struk
@@ -1000,4 +1011,4 @@ export default function App() {
       </div>
     </div>
   );
-  }
+            }
