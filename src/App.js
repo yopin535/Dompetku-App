@@ -1,9 +1,10 @@
+react
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Plus, Trash2, Wallet, TrendingUp, TrendingDown, DollarSign, 
   Cloud, Loader2, Tag, Calendar, PieChart, List, ChevronLeft, ChevronRight, 
   Download, Upload, FileText, CheckCircle, XCircle, X, Settings, Sparkles,
-  LogOut, LogIn, AlertTriangle, User, Info, Check, CloudOff, RefreshCw, Globe, Edit2
+  LogOut, LogIn, AlertTriangle, User, Info, Check, CloudOff, RefreshCw, Globe, Edit2, Camera
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -43,7 +44,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
-// Fitur Offline Cache
 const db = initializeFirestore(app, {
   localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
 });
@@ -60,10 +60,8 @@ export default function App() {
   const [notification, setNotification] = useState(null);
   const [syncStatus, setSyncStatus] = useState('synced');
   
-  // State Scroll untuk Tombol Melayang
   const [showFloatingAdd, setShowFloatingAdd] = useState(false);
   
-  // Modal States
   const [showCatModal, setShowCatModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [showDummyModal, setShowDummyModal] = useState(false);
@@ -89,7 +87,6 @@ export default function App() {
   const [type, setType] = useState('expense');
   const [currency, setCurrency] = useState('IDR'); 
   const [date, setDate] = useState(getCurrentDate());
-  // Kategori sekarang menggunakan ARRAY karena bisa pilih banyak
   const [selectedCategories, setSelectedCategories] = useState(['Makanan']);
   
   const [editId, setEditId] = useState(null);
@@ -99,6 +96,11 @@ export default function App() {
   const [reportType, setReportType] = useState('monthly'); 
   const [reportCurrency, setReportCurrency] = useState('IDR'); 
   const fileInputRef = useRef(null);
+  const receiptInputRef = useRef(null);
+
+  // --- AI SCANNER STATES ---
+  const [geminiKey, setGeminiKey] = useState(localStorage.getItem('gemini_api_key') || '');
+  const [isScanning, setIsScanning] = useState(false);
 
   const defaultExpenseCategories = ['Makanan', 'Transportasi', 'Belanja', 'Tagihan', 'Hiburan', 'Kesehatan', 'Pendidikan', 'Lainnya'];
   const defaultIncomeCategories = ['Gaji', 'Bonus', 'Hadiah', 'Penjualan', 'Investasi', 'Freelance', 'Lainnya'];
@@ -113,10 +115,8 @@ export default function App() {
     return [...defaultIncomeCategories, ...custom];
   }, [customCategories]);
 
-  // Reset kategori jika pindah tipe transaksi
   useEffect(() => {
     const currentList = type === 'expense' ? expenseCategories : incomeCategories;
-    // Setel ulang ke kategori pertama secara default
     setSelectedCategories([currentList[0]]);
   }, [type, expenseCategories, incomeCategories]);
 
@@ -206,9 +206,7 @@ export default function App() {
       setNotification({ type: 'success', message: 'Berhasil login Google!' });
     } catch (error) {
       setNotification({ type: 'error', message: 'Gagal login.' });
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const handleLogout = async () => {
@@ -216,9 +214,74 @@ export default function App() {
       await signOut(auth);
       setNotification({ type: 'success', message: 'Berhasil logout.' });
       setView('home'); 
-    } catch (error) {
-      console.error(error);
+    } catch (error) { console.error(error); }
+  };
+
+  const handleSaveGeminiKey = (e) => {
+    const val = e.target.value.trim();
+    setGeminiKey(val);
+    localStorage.setItem('gemini_api_key', val);
+  };
+
+  // --- FUNGSI SCAN STRUK MENGGUNAKAN AI ---
+  const handleScanReceipt = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    if (!geminiKey) {
+      setNotification({ type: 'error', message: 'Isi Gemini API Key di Pengaturan terlebih dahulu!' });
+      e.target.value = null;
+      return;
     }
+
+    setIsScanning(true);
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = async () => {
+      try {
+        const base64Data = reader.result.split(',')[1];
+        
+        const prompt = `Anda adalah asisten pencatat keuangan. Analisis gambar struk/kuitansi ini. 
+        Ekstrak informasi berikut dan kembalikan HANYA dalam format JSON MURNI (tanpa markdown \`\`\`json, tanpa teks lain):
+        {
+          "description": "Nama Toko atau Barang",
+          "amount": angka_total_belanja_tanpa_titik_atau_koma,
+          "date": "YYYY-MM-DD"
+        }
+        Jika tanggal tidak ada, gunakan tanggal hari ini.`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: file.type, data: base64Data } }] }]
+          })
+        });
+
+        const data = await response.json();
+        
+        if (data.error) throw new Error(data.error.message);
+
+        const aiText = data.candidates[0].content.parts[0].text;
+        // Bersihkan jika AI masih membalas dengan format markdown
+        const cleanJson = aiText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const result = JSON.parse(cleanJson);
+
+        if (result.description) setDescription(result.description);
+        if (result.amount) setAmount(result.amount.toString());
+        if (result.date) setDate(result.date);
+        
+        setType('expense');
+        setNotification({ type: 'success', message: 'Berhasil membaca struk!' });
+
+      } catch (error) {
+        console.error(error);
+        setNotification({ type: 'error', message: 'Gagal membaca struk. Pastikan API Key valid & gambar jelas.' });
+      } finally {
+        setIsScanning(false);
+        e.target.value = null;
+      }
+    };
   };
 
   const handleSaveCategory = async (e) => {
@@ -228,17 +291,9 @@ export default function App() {
     setSyncStatus('saving');
     try {
       await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'categories'), { name: newCat, type, createdAt: Date.now() });
-      
-      // Otomatis pilih kategori yang baru dibuat
-      if (!selectedCategories.includes(newCat)) {
-        setSelectedCategories([...selectedCategories, newCat]);
-      }
-      setNewCatName('');
-      setNotification({ type: 'success', message: 'Kategori ditambahkan.' });
-      setShowCatModal(false);
-    } catch (error) {
-      setSyncStatus('offline');
-    }
+      if (!selectedCategories.includes(newCat)) setSelectedCategories([...selectedCategories, newCat]);
+      setNewCatName(''); setNotification({ type: 'success', message: 'Kategori ditambahkan.' }); setShowCatModal(false);
+    } catch (error) { setSyncStatus('offline'); }
   };
 
   const handleDeleteCategory = async (catId) => {
@@ -247,20 +302,13 @@ export default function App() {
     try {
       await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'categories', catId));
       setNotification({ type: 'success', message: 'Kategori dihapus.' });
-    } catch (error) {
-      setSyncStatus('offline');
-    }
+    } catch (error) { setSyncStatus('offline'); }
   };
 
-  // Toggle Pilihan Kategori Label
   const toggleCategory = (cat) => {
     if (selectedCategories.includes(cat)) {
-      // Jangan izinkan hapus jika hanya tersisa 1 kategori
-      if (selectedCategories.length > 1) {
-        setSelectedCategories(selectedCategories.filter(c => c !== cat));
-      } else {
-        setNotification({ type: 'error', message: 'Minimal pilih 1 kategori.' });
-      }
+      if (selectedCategories.length > 1) setSelectedCategories(selectedCategories.filter(c => c !== cat));
+      else setNotification({ type: 'error', message: 'Minimal pilih 1 kategori.' });
     } else {
       setSelectedCategories([...selectedCategories, cat]);
     }
@@ -273,11 +321,8 @@ export default function App() {
     try {
       const selectedDate = new Date(date);
       const transactionData = {
-        description, 
-        amount: parseFloat(amount), 
-        type, 
-        categories: selectedCategories, // Menyimpan array label/kategori
-        category: selectedCategories[0] || 'Umum', // Cadangan (fallback) untuk fitur pie chart
+        description, amount: parseFloat(amount), type, 
+        categories: selectedCategories, category: selectedCategories[0] || 'Umum', 
         currency,
         date: selectedDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
         transactionDate: selectedDate.getTime()
@@ -285,17 +330,14 @@ export default function App() {
 
       if (editId) {
         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', editId), transactionData);
-        setNotification({ type: 'success', message: 'Transaksi diperbarui.' });
-        setEditId(null);
+        setNotification({ type: 'success', message: 'Transaksi diperbarui.' }); setEditId(null);
       } else {
         transactionData.createdAt = Date.now();
         await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), transactionData);
         setNotification({ type: 'success', message: 'Transaksi disimpan.' });
       }
       
-      setHomeViewDate(selectedDate);
-      setDescription(''); setAmount(''); setDate(getCurrentDate());
-      // Reset kategori ke default
+      setHomeViewDate(selectedDate); setDescription(''); setAmount(''); setDate(getCurrentDate());
       const currentList = type === 'expense' ? expenseCategories : incomeCategories;
       setSelectedCategories([currentList[0]]);
     } catch (error) {
@@ -305,166 +347,26 @@ export default function App() {
   };
 
   const handleEditClick = (t) => {
-    setEditId(t.id);
-    setDescription(t.description);
-    setAmount(t.amount.toString());
-    setType(t.type);
-    
-    // Ambil categories array (atau fallback dari string jika transaksi lama)
+    setEditId(t.id); setDescription(t.description); setAmount(t.amount.toString()); setType(t.type);
     let cats = [];
-    if (t.categories && Array.isArray(t.categories) && t.categories.length > 0) {
-      cats = t.categories;
-    } else if (t.category) {
-      cats = [t.category];
-    } else {
-      cats = [t.type === 'expense' ? expenseCategories[0] : incomeCategories[0]];
-    }
-    setSelectedCategories(cats);
-    setCurrency(t.currency || 'IDR');
+    if (t.categories && Array.isArray(t.categories) && t.categories.length > 0) cats = t.categories;
+    else if (t.category) cats = [t.category];
+    else cats = [t.type === 'expense' ? expenseCategories[0] : incomeCategories[0]];
     
+    setSelectedCategories(cats); setCurrency(t.currency || 'IDR');
     const d = new Date(t.transactionDate || t.createdAt);
-    const formattedDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    setDate(formattedDate);
-    
+    setDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const cancelEdit = () => {
-    setEditId(null);
-    setDescription('');
-    setAmount('');
-    setDate(getCurrentDate());
-    const currentList = type === 'expense' ? expenseCategories : incomeCategories;
-    setSelectedCategories([currentList[0]]);
+    setEditId(null); setDescription(''); setAmount(''); setDate(getCurrentDate());
+    setSelectedCategories([type === 'expense' ? expenseCategories[0] : incomeCategories[0]]);
   };
 
   const handleDelete = async (id) => {
     if (!user) return;
     try { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', id)); } catch (error) {}
-  };
-
-  const downloadCSV = () => {
-    if (transactions.length === 0) {
-      setNotification({ type: 'error', message: 'Tidak ada data.' });
-      return;
-    }
-    const headers = ['iso_date', 'tanggal_display', 'deskripsi', 'kategori', 'tipe', 'mata_uang', 'jumlah'];
-    const csvRows = [headers.join(',')];
-    transactions.forEach(t => {
-      const dateObj = new Date(t.transactionDate || t.createdAt);
-      const isoDate = dateObj.toISOString().split('T')[0];
-      // Gabungkan array label jadi string dipisah '&'
-      const catString = t.categories ? t.categories.join(' & ') : (t.category || 'Umum');
-      
-      const row = [
-        isoDate, `"${t.date}"`, `"${t.description.replace(/"/g, '""')}"`, 
-        `"${catString}"`, t.type, t.currency || 'IDR', t.amount
-      ];
-      csvRows.push(row.join(','));
-    });
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Backup_Dompetku.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleImportClick = () => fileInputRef.current?.click();
-
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const rows = event.target.result.split('\n');
-        let importedCount = 0;
-        setLoading(true); setSyncStatus('saving');
-        for (let i = 1; i < rows.length; i++) {
-          const row = rows[i].trim();
-          if (!row) continue;
-          const matches = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
-          const cols = matches || row.split(',');
-          if (cols && cols.length >= 6) {
-            const clean = (str) => str ? str.replace(/^"|"$/g, '').replace(/""/g, '"') : '';
-            const isoDate = clean(cols[0]);
-            const description = clean(cols[2]);
-            const categoryRaw = clean(cols[3]);
-            const type = clean(cols[4]);
-            
-            // Konversi kembali dari string gabungan CSV menjadi array
-            const catsArray = categoryRaw.split(' & ').map(c => c.trim()).filter(Boolean);
-
-            let curr = 'IDR'; let amt = 0;
-            if (cols.length === 7) { curr = clean(cols[5]); amt = parseFloat(clean(cols[6])); } 
-            else { amt = parseFloat(clean(cols[5])); }
-            
-            if (isoDate && description && !isNaN(amt)) {
-              const dateObj = new Date(isoDate);
-              await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), {
-                description, amount: amt, type: type.includes('income') || type.includes('Pemasukan') ? 'income' : 'expense',
-                categories: catsArray.length > 0 ? catsArray : ['Umum'],
-                category: catsArray[0] || 'Umum',
-                currency: curr,
-                date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
-                transactionDate: dateObj.getTime(), createdAt: Date.now()
-              });
-              importedCount++;
-            }
-          }
-        }
-        setLoading(false); setNotification({ type: 'success', message: `Berhasil mengimpor ${importedCount} transaksi.` });
-        e.target.value = null;
-      } catch (error) {
-        setLoading(false); setNotification({ type: 'error', message: 'Gagal import.' });
-      } finally { setSyncStatus('synced'); }
-    };
-    reader.readAsText(file);
-  };
-
-  const handleResetData = async () => {
-    if (!user) return;
-    setLoading(true); setSyncStatus('saving'); setShowResetModal(false);
-    try {
-      const batch = writeBatch(db);
-      const transSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'));
-      transSnapshot.forEach((doc) => batch.delete(doc.ref));
-      const catSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'categories'));
-      catSnapshot.forEach((doc) => batch.delete(doc.ref));
-      await batch.commit();
-      setTransactions([]); setCustomCategories([]);
-      setNotification({ type: 'success', message: 'Data direset.' });
-    } catch (error) {
-      setNotification({ type: 'error', message: 'Gagal mereset.' });
-    } finally { setLoading(false); setSyncStatus('synced'); }
-  };
-
-  const confirmGenerateDummy = async () => {
-    if (!user) return;
-    setShowDummyModal(false); setLoading(true); setSyncStatus('saving');
-    try {
-      const dummyData = [
-        { desc: 'Gaji Bulanan', amount: 5000000, type: 'income', cats: ['Gaji'], dayOffset: 0, curr: 'IDR' },
-        { desc: 'Makan Siang', amount: 25000, type: 'expense', cats: ['Makanan'], dayOffset: 1, curr: 'IDR' },
-        { desc: 'Ongkos & Jajan', amount: 45000, type: 'expense', cats: ['Transportasi', 'Hiburan'], dayOffset: 2, curr: 'IDR' }
-      ];
-      const now = new Date();
-      for (const item of dummyData) {
-        const dateObj = new Date(now); dateObj.setDate(dateObj.getDate() - item.dayOffset);
-        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), {
-          description: item.desc, amount: item.amount, type: item.type, 
-          categories: item.cats, category: item.cats[0], currency: item.curr,
-          date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
-          transactionDate: dateObj.getTime(), createdAt: Date.now()
-        });
-      }
-      setNotification({ type: 'success', message: 'Demo ditambahkan.' });
-    } catch (error) {
-      setNotification({ type: 'error', message: 'Gagal membuat demo.' });
-    } finally { setLoading(false); setSyncStatus('synced'); }
   };
 
   const renderHeader = () => (
@@ -494,15 +396,11 @@ export default function App() {
       const d = new Date(t.transactionDate || t.createdAt);
       return d.getMonth() === homeViewDate.getMonth() && d.getFullYear() === homeViewDate.getFullYear();
     });
-    
     const grouped = [];
     filtered.forEach(t => {
       const lastGroup = grouped[grouped.length - 1];
-      if (lastGroup && lastGroup.date === t.date) {
-          lastGroup.items.push(t);
-      } else {
-          grouped.push({ date: t.date, items: [t] });
-      }
+      if (lastGroup && lastGroup.date === t.date) lastGroup.items.push(t);
+      else grouped.push({ date: t.date, items: [t] });
     });
     return { groupedHomeTransactions: grouped, homeTransactionsCount: filtered.length };
   }, [transactions, homeViewDate]);
@@ -512,10 +410,30 @@ export default function App() {
       <div className="animate-in fade-in duration-300">
         
         {/* Form Tambah/Edit Transaksi */}
-        <div className={`bg-white rounded-2xl shadow-sm border p-5 mt-2 mb-6 transition-all ${editId ? 'border-blue-300 ring-4 ring-blue-50' : 'border-gray-100'}`}>
-          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-            {editId ? <Edit2 className="w-5 h-5 text-blue-600" /> : 'Tambah Transaksi'}
-          </h3>
+        <div className={`bg-white rounded-2xl shadow-sm border p-5 mt-2 mb-6 transition-all relative overflow-hidden ${editId ? 'border-blue-300 ring-4 ring-blue-50' : 'border-gray-100'}`}>
+          {isScanning && (
+            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
+              <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-2" />
+              <p className="text-sm font-bold text-gray-700">Menganalisis Struk...</p>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-gray-800 flex items-center gap-2">
+              {editId ? <Edit2 className="w-5 h-5 text-blue-600" /> : 'Tambah Transaksi'}
+            </h3>
+            
+            {/* Tombol Scan Struk AI */}
+            {!editId && (
+              <div>
+                <input type="file" accept="image/*" capture="environment" ref={receiptInputRef} onChange={handleScanReceipt} className="hidden" />
+                <button type="button" onClick={() => receiptInputRef.current?.click()} className="flex items-center gap-1.5 text-xs font-bold bg-purple-50 text-purple-700 px-3 py-1.5 rounded-full border border-purple-100 hover:bg-purple-100 transition-colors">
+                  <Camera className="w-3.5 h-3.5" /> Scan Struk
+                </button>
+              </div>
+            )}
+          </div>
+
           <form onSubmit={handleAddTransaction} className="space-y-4">
             <div className="flex bg-gray-100 p-1 rounded-lg h-[42px]">
               <button type="button" onClick={() => setType('income')} className={`flex-1 flex items-center justify-center rounded-md text-sm font-medium transition-all ${type === 'income' ? 'bg-emerald-500 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Pemasukan</button>
@@ -551,41 +469,19 @@ export default function App() {
               </div>
             </div>
 
-            {/* LABEL MULTI-SELECT KATEGORI */}
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-2">Label Kategori (Pilih 1 atau lebih)</label>
               <div className="flex flex-wrap gap-2">
                 {(type === 'expense' ? expenseCategories : incomeCategories).map((cat) => (
-                  <button
-                    key={`label-${cat}`}
-                    type="button"
-                    onClick={() => toggleCategory(cat)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                      selectedCategories.includes(cat) 
-                      ? (type === 'expense' ? 'bg-rose-600 text-white border-rose-600 shadow-sm' : 'bg-emerald-600 text-white border-emerald-600 shadow-sm') 
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    {cat}
-                  </button>
+                  <button key={`label-${cat}`} type="button" onClick={() => toggleCategory(cat)} className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${selectedCategories.includes(cat) ? (type === 'expense' ? 'bg-rose-600 text-white border-rose-600 shadow-sm' : 'bg-emerald-600 text-white border-emerald-600 shadow-sm') : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}>{cat}</button>
                 ))}
-                <button 
-                  type="button" 
-                  onClick={() => setShowCatModal(true)}
-                  className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-blue-600 hover:bg-gray-200 transition-all flex items-center gap-1"
-                >
-                  <Plus className="w-3 h-3" /> Tambah
-                </button>
+                <button type="button" onClick={() => setShowCatModal(true)} className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-blue-600 hover:bg-gray-200 transition-all flex items-center gap-1"><Plus className="w-3 h-3" /> Tambah</button>
               </div>
             </div>
 
             <div className="flex gap-2 mt-4 pt-2 border-t border-gray-100">
-              {editId && (
-                <button type="button" onClick={cancelEdit} className="w-1/3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 rounded-xl transition-colors">
-                  Batal
-                </button>
-              )}
-              <button type="submit" disabled={!user || loading} className={`${editId ? 'w-2/3 bg-blue-600 hover:bg-blue-700' : 'w-full bg-gray-900 hover:bg-black'} text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed`}>
+              {editId && <button type="button" onClick={cancelEdit} className="w-1/3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 rounded-xl transition-colors">Batal</button>}
+              <button type="submit" disabled={!user || loading || isScanning} className={`${editId ? 'w-2/3 bg-blue-600 hover:bg-blue-700' : 'w-full bg-gray-900 hover:bg-black'} text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed`}>
                 {editId ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />} 
                 {editId ? 'Perbarui' : 'Simpan Transaksi'}
               </button>
@@ -593,14 +489,12 @@ export default function App() {
           </form>
         </div>
 
-        {/* Daftar Riwayat (Dikelompokkan Berdasarkan Tanggal) */}
+        {/* Daftar Riwayat */}
         <div>
           <div className="flex items-center justify-between mb-4 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
             <button type="button" onClick={() => changeHomeMonth(-1)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
             <div className="text-center">
-              <h3 className="font-bold text-gray-800 text-sm">
-                {homeViewDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
-              </h3>
+              <h3 className="font-bold text-gray-800 text-sm">{homeViewDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}</h3>
               <p className="text-[10px] text-gray-500">{homeTransactionsCount} transaksi</p>
             </div>
             <button type="button" onClick={() => changeHomeMonth(1)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ChevronRight className="w-5 h-5 text-gray-600" /></button>
@@ -609,30 +503,23 @@ export default function App() {
           {groupedHomeTransactions.length === 0 ? (
             <div className="text-center py-10 bg-white rounded-2xl border border-dashed border-gray-200">
               <div className="bg-gray-50 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3"><DollarSign className="w-6 h-6 text-gray-400" /></div>
-              <p className="text-gray-500 text-sm">{loading ? 'Sedang memuat data...' : 'Belum ada transaksi'}</p>
+              <p className="text-gray-500 text-sm">Belum ada transaksi</p>
             </div>
           ) : (
             <div className="space-y-6 pb-8">
               {groupedHomeTransactions.map((group) => (
                 <div key={group.date} className="animate-in fade-in slide-in-from-bottom-2">
-                  <h4 className="text-sm font-bold text-gray-500 border-b border-gray-200 pb-2 mb-3 sticky top-[72px] bg-gray-50/95 backdrop-blur-sm z-10">
-                    {group.date}
-                  </h4>
+                  <h4 className="text-sm font-bold text-gray-500 border-b border-gray-200 pb-2 mb-3 sticky top-[72px] bg-gray-50/95 backdrop-blur-sm z-10">{group.date}</h4>
                   <div className="space-y-3">
                     {group.items.map((t) => (
                       <div key={t.id} className="group bg-white p-4 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center justify-between">
                         <div className="flex items-center gap-4 w-2/3">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${t.type === 'income' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
-                            {t.type === 'income' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
-                          </div>
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${t.type === 'income' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>{t.type === 'income' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}</div>
                           <div className="min-w-0">
                             <h4 className="font-semibold text-gray-800 text-sm truncate">{t.description}</h4>
                             <div className="flex flex-wrap gap-1 mt-1">
-                              {/* Mapping multi-label yang dipilih */}
                               {(t.categories || (t.category ? [t.category] : ['Umum'])).map(catLabel => (
-                                <span key={`${t.id}-${catLabel}`} className="text-[9px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">
-                                  {catLabel}
-                                </span>
+                                <span key={`${t.id}-${catLabel}`} className="text-[9px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">{catLabel}</span>
                               ))}
                             </div>
                           </div>
@@ -654,7 +541,7 @@ export default function App() {
     );
   };
 
-  // --- LAPORAN & PENGATURAN ---
+  // --- LAPORAN ---
   const filteredByPeriod = useMemo(() => {
     return transactions.filter(t => {
       const tDate = new Date(t.transactionDate || t.createdAt);
@@ -669,7 +556,6 @@ export default function App() {
     const stats = {}; let totalExpense = 0;
     reportTransactions.forEach(t => {
       if (t.type === 'expense') { 
-        // Untuk pie chart, kita ambil kategori (label) PERTAMA agar perhitungan rapi sampai 100%
         const primaryCat = (t.categories && t.categories.length > 0) ? t.categories[0] : (t.category || 'Umum');
         stats[primaryCat] = (stats[primaryCat] || 0) + t.amount; 
         totalExpense += t.amount; 
@@ -729,7 +615,7 @@ export default function App() {
           <p className="text-xs text-gray-500 mb-1">Arus Kas Bersih (Net Cashflow)</p>
           <p className={`text-2xl font-bold ${reportSummary.balance >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>{reportSummary.balance >= 0 ? '+' : ''}{formatCurrency(reportSummary.balance, reportCurrency)}</p>
         </div>
-        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><PieChart className="w-4 h-4 text-gray-500" /> Statistik Pengeluaran (Berdasarkan Label Utama)</h3>
+        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><PieChart className="w-4 h-4 text-gray-500" /> Statistik Pengeluaran</h3>
         {categoryStats.length === 0 ? <div className="text-center py-8 text-gray-400 text-sm">Belum ada data.</div> : (
           <div className="space-y-4">
             {categoryStats.map((cat) => (
@@ -784,14 +670,31 @@ export default function App() {
             <button onClick={handleLogout} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl text-xs font-medium transition-colors flex items-center gap-2"><LogOut className="w-4 h-4" /> Keluar</button>
           }
         </div>
-        <div className="mt-4 p-3 bg-emerald-50 rounded-xl flex gap-3 border border-emerald-100">
-          <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-          <div>
-            <p className="text-xs font-bold text-emerald-800">Auto Backup Aktif</p>
-            <p className="text-[10px] text-emerald-700 mt-0.5">Setiap transaksi otomatis tersimpan ke server Google. Data aman meskipun Anda berganti perangkat.</p>
-          </div>
+      </div>
+
+      {/* --- PENGATURAN API KEY GEMINI UNTUK FITUR SCAN STRUK --- */}
+      <div className="bg-white rounded-2xl shadow-sm border border-purple-100 p-5 mb-6 relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-4 opacity-10"><Sparkles className="w-16 h-16 text-purple-600" /></div>
+        <h3 className="text-sm font-bold text-purple-600 uppercase tracking-wider mb-2 flex items-center gap-2"><Sparkles className="w-4 h-4" /> Fitur AI Scan Struk</h3>
+        <p className="text-xs text-gray-500 mb-4 pr-10">Masukkan API Key dari Google Gemini untuk mengaktifkan fitur scan otomatis. Data ini aman dan hanya disimpan di HP Anda.</p>
+        
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Gemini API Key</label>
+          <input 
+            type="password" 
+            value={geminiKey} 
+            onChange={handleSaveGeminiKey} 
+            placeholder="AIzaSy..." 
+            className="w-full bg-purple-50/50 border border-purple-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all font-mono text-sm"
+          />
+          {!geminiKey && (
+             <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="inline-block mt-2 text-[10px] text-blue-600 hover:underline">
+               Dapatkan API Key Gratis di Google AI Studio &rarr;
+             </a>
+          )}
         </div>
       </div>
+      {/* -------------------------------------------------------- */}
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
         <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Kategori Label</h3>
@@ -813,37 +716,12 @@ export default function App() {
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
-        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Manajemen Data</h3>
-        <div className="space-y-3">
-          <button onClick={downloadCSV} disabled={transactions.length === 0} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 transition-all group">
-            <div className="flex items-center gap-3">
-              <div className="bg-blue-100 p-2 rounded-lg group-hover:bg-blue-200 transition-colors"><Download className="w-5 h-5 text-blue-600" /></div>
-              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Export ke Excel</p><p className="text-xs text-gray-400">Unduh file .csv untuk arsip</p></div>
-            </div>
-          </button>
-          <button onClick={handleImportClick} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-200 hover:border-emerald-200 transition-all group">
-             <div className="flex items-center gap-3">
-              <div className="bg-emerald-100 p-2 rounded-lg group-hover:bg-emerald-200 transition-colors"><Upload className="w-5 h-5 text-emerald-600" /></div>
-              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Restore Data</p><p className="text-xs text-gray-400">Kembalikan data dari file backup</p></div>
-            </div>
-          </button>
-          <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv" className="hidden" />
-          <button onClick={() => setShowDummyModal(true)} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-purple-50 border border-gray-200 hover:border-purple-200 transition-all group">
-             <div className="flex items-center gap-3">
-              <div className="bg-purple-100 p-2 rounded-lg group-hover:bg-purple-200 transition-colors"><Sparkles className="w-5 h-5 text-purple-600" /></div>
-              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Isi Data Demo</p><p className="text-xs text-gray-400">Buat transaksi contoh otomatis</p></div>
-            </div>
-          </button>
-        </div>
-      </div>
-
       <div className="bg-white rounded-2xl shadow-sm border border-red-100 p-5 mb-6">
         <h3 className="text-sm font-bold text-red-500 uppercase tracking-wider mb-4 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> Zona Bahaya</h3>
         <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data</button>
       </div>
       
-      <div className="text-center text-xs text-gray-300 pb-8">Dompetku Cloud v2.0.0</div>
+      <div className="text-center text-xs text-gray-300 pb-8">Dompetku Cloud v2.1.0 (AI Edition)</div>
     </div>
   );
 
@@ -859,10 +737,6 @@ export default function App() {
               {notification.type === 'success' ? <CheckCircle className="w-5 h-5 flex-shrink-0" /> : <XCircle className="w-5 h-5 flex-shrink-0" />}<span className="text-sm font-medium">{notification.message}</span>
             </div>
           </div>
-        )}
-
-        {showDummyModal && (
-          <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4"><div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl"><div className="flex flex-col items-center text-center mb-6"><div className="bg-purple-100 p-3 rounded-full mb-4"><Sparkles className="w-8 h-8 text-purple-600" /></div><h3 className="font-bold text-xl text-gray-900">Isi Data Demo?</h3></div><div className="flex gap-3"><button onClick={() => setShowDummyModal(false)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition-colors">Batal</button><button onClick={confirmGenerateDummy} className="flex-1 py-3 rounded-xl bg-purple-600 text-white font-medium hover:bg-purple-700 transition-colors shadow-lg shadow-purple-200">Ya, Tambahkan</button></div></div></div>
         )}
 
         {showResetModal && (
@@ -926,4 +800,7 @@ export default function App() {
       </div>
     </div>
   );
-                                            }
+}
+
+
+```
