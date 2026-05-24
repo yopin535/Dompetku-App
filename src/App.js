@@ -29,7 +29,7 @@ import {
 } from 'firebase/firestore';
 
 // =====================================================================
-// FIREBASE CONFIG MILIKMU (Sudah Diterapkan)
+// FIREBASE CONFIG MILIKMU
 // =====================================================================
 const firebaseConfig = {
   apiKey: "AIzaSyA3GU59sJ0W9QKGyWZ3LjBffUnNoxp46MY",
@@ -222,7 +222,7 @@ export default function App() {
     localStorage.setItem('gemini_api_key', val);
   };
 
-  // --- FUNGSI SCAN STRUK AI (100% AMAN DARI ERROR COPY PASTE HP) ---
+  // --- FUNGSI SCAN STRUK AI (DI TINGKATKAN) ---
   const handleScanReceipt = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -240,19 +240,21 @@ export default function App() {
       try {
         const base64Data = reader.result.split(',')[1];
         
-        // Membungkus instruksi sebagai Object agar tidak perlu backslash untuk kutip
+        // Membungkus instruksi sebagai Object agar lebih cerdas membaca bahasa asing/simbol
         const promptObj = {
-          instruksi: "Anda adalah asisten keuangan. Analisis gambar struk ini. Ekstrak data dan kembalikan HANYA format JSON MURNI tanpa teks apapun.",
+          instruksi: "Anda adalah asisten keuangan yang cerdas. Analisis gambar struk (receipt) ini. Struk mungkin dalam bahasa Jepang (seperti TRIAL, Lawson, dll), Indonesia, atau Inggris. Temukan Nama Toko, Total Harga Akhir (hilangkan koma/simbol mata uang), Tanggal (format YYYY-MM-DD), dan tentukan kode Mata Uang (JPY, IDR, USD). Kembalikan HANYA format JSON MURNI tanpa teks markdown.",
           format: {
-            description: "Nama Toko atau Barang",
-            amount: 150000,
-            date: "YYYY-MM-DD"
+            description: "Nama Toko (misal: TRIAL Yachimata, Indomaret)",
+            amount: 3849,
+            date: "YYYY-MM-DD",
+            currency: "JPY"
           },
-          catatan: "Gunakan tanggal hari ini jika tidak ada. Amount harus angka bulat tanpa pemisah ribuan."
+          catatan: "Pastikan 'amount' berupa ANGKA BULAT (Number), hilangkan koma atau titik. Contoh: '¥3,849' menjadi 3849. Jika gagal menemukan tanggal, gunakan tanggal hari ini."
         };
         const promptText = JSON.stringify(promptObj);
 
-        const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + geminiKey, {
+        // Menggunakan model 'gemini-1.5-pro' yang lebih canggih untuk baca struk kompleks
+        const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=" + geminiKey, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -277,8 +279,12 @@ export default function App() {
         if (result.description) setDescription(result.description);
         if (result.amount) setAmount(result.amount.toString());
         if (result.date) setDate(result.date);
+        if (result.currency && currencies.some(c => c.code === result.currency)) {
+            setCurrency(result.currency);
+        }
         
         setType('expense');
+        setSelectedCategories(['Belanja']); // Set kategori default ke Belanja setelah scan
         setNotification({ type: 'success', message: 'Berhasil membaca struk!' });
 
       } catch (error) {
@@ -286,7 +292,7 @@ export default function App() {
         setNotification({ type: 'error', message: 'Gagal membaca struk. Pastikan gambar jelas & API Key benar.' });
       } finally {
         setIsScanning(false);
-        e.target.value = null;
+        e.target.value = null; // Reset input
       }
     };
   };
@@ -437,7 +443,10 @@ export default function App() {
             
             {!editId && (
               <div>
-                <input type="file" accept="image/*" capture="environment" ref={receiptInputRef} onChange={handleScanReceipt} className="hidden" />
+                {/* Tombol input file sudah diperbaiki.
+                  Atribut `capture="environment"` DIHAPUS agar opsi Galeri terbuka di HP Android
+                */}
+                <input type="file" accept="image/*" ref={receiptInputRef} onChange={handleScanReceipt} className="hidden" />
                 <button type="button" onClick={() => receiptInputRef.current?.click()} className="flex items-center gap-1.5 text-xs font-bold bg-purple-50 text-purple-700 px-3 py-1.5 rounded-full border border-purple-100 hover:bg-purple-100 transition-colors">
                   <Camera className="w-3.5 h-3.5" /> Scan Struk
                 </button>
@@ -687,7 +696,6 @@ export default function App() {
     </div>
   );
 
-  // --- REWRITE FUNGSI EXPORT (BEBAS ERROR SYNTAX & BEBAS BACKSLASH) ---
   const downloadCSV = () => {
     if (transactions.length === 0) {
       setNotification({ type: 'error', message: 'Tidak ada data.' });
@@ -992,4 +1000,4 @@ export default function App() {
       </div>
     </div>
   );
-                              }
+  }
