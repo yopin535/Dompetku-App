@@ -3,7 +3,8 @@ import {
   Plus, Trash2, Wallet, TrendingUp, TrendingDown, DollarSign, 
   Cloud, Loader2, Tag, Calendar, PieChart, List, ChevronLeft, ChevronRight, 
   Download, Upload, FileText, CheckCircle, XCircle, X, Settings, Sparkles,
-  LogOut, LogIn, AlertTriangle, User, Info, Check, CloudOff, RefreshCw, Globe, Edit2, Camera
+  LogOut, LogIn, AlertTriangle, User, Info, Check, CloudOff, RefreshCw, Globe, Edit2, Camera,
+  ChevronDown, ChevronUp, Receipt
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -87,9 +88,13 @@ export default function App() {
   const [currency, setCurrency] = useState('IDR'); 
   const [date, setDate] = useState(getCurrentDate());
   const [selectedCategories, setSelectedCategories] = useState(['Makanan']);
+  const [items, setItems] = useState([]); // Array untuk menyimpan daftar belanjaan
   
   const [editId, setEditId] = useState(null);
   const [homeViewDate, setHomeViewDate] = useState(new Date());
+  
+  // State untuk melacak rincian transaksi mana yang sedang dibuka (expand)
+  const [expandedId, setExpandedId] = useState(null);
 
   const [reportDate, setReportDate] = useState(new Date());
   const [reportType, setReportType] = useState('monthly'); 
@@ -116,7 +121,6 @@ export default function App() {
 
   useEffect(() => {
     const currentList = type === 'expense' ? expenseCategories : incomeCategories;
-    // Hanya ubah jika sedang tidak edit data
     if(!editId) {
       setSelectedCategories([currentList[0]]);
     }
@@ -225,7 +229,7 @@ export default function App() {
     localStorage.setItem('gemini_api_key', val);
   };
 
-  // --- FUNGSI SCAN STRUK AI (MEMASTIKAN HANYA MENGISI FORM) ---
+  // --- FUNGSI AI: MEMBACA STRUK & ITEM BARANG ---
   const handleScanReceipt = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -245,19 +249,15 @@ export default function App() {
         
         let mimeType = file.type;
         if (!mimeType) {
-          if (file.name.toLowerCase().endsWith('.heic')) {
-            mimeType = 'image/heic';
-          } else {
-            mimeType = 'image/jpeg';
-          }
+          if (file.name.toLowerCase().endsWith('.heic')) mimeType = 'image/heic';
+          else mimeType = 'image/jpeg';
         }
         
-        // Prompt instruksi yang lebih jelas
-        const prompt = "Ekstrak data dari gambar struk/receipt belanja ini. Jika ada bahasa asing seperti Jepang (contoh: TRIAL, Lawson), terjemahkan nama toko jika perlu atau biarkan aslinya. " +
-        "PENTING: Kembalikan jawaban HANYA DALAM BENTUK JSON (tidak ada backtick, tidak ada markdown, HANYA kurung kurawal buka dan tutup). " +
-        "Format JSON yang harus dipatuhi persis: " +
-        "{\"desc\": \"Nama Toko Utama\", \"total\": angka_tanpa_koma_atau_simbol, \"tgl\": \"YYYY-MM-DD\", \"curr\": \"KODE_MATA_UANG_SEPERTI_JPY_ATAU_IDR\"} " +
-        "Catatan: 'total' harus berupa integer/number. Jika tgl tidak ketemu, gunakan format YYYY-MM-DD hari ini.";
+        // Meminta AI membaca Rincian Barang (items array)
+        const prompt = "Ekstrak data dari gambar struk/receipt belanja ini. Jika bahasa asing, biarkan namanya atau terjemahkan sedikit agar mudah dimengerti. " +
+        "Kembalikan HANYA format JSON MURNI dengan struktur persis ini: " +
+        "{\"desc\": \"Nama Toko/Restoran\", \"total\": angka_tanpa_simbol, \"tgl\": \"YYYY-MM-DD\", \"curr\": \"KODE_MATA_UANG\", \"items\": [{\"n\": \"Nama Barang\", \"p\": harga_barang_angka_bulat}]} " +
+        "Catatan: Pajak/diskon masukkan sebagai item tersendiri di dalam list items.";
 
         const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + geminiKey, {
           method: 'POST',
@@ -271,41 +271,76 @@ export default function App() {
         
         if (data.error) throw new Error(data.error.message);
 
-        // Membersihkan markdown jika Gemini masih bandel
         let rawText = data.candidates[0].content.parts[0].text;
         rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
         
         const result = JSON.parse(rawText);
 
-        // Memasukkan hasil AI ke dalam Form Inputan (Hanya sebagai DRAFT)
         if (result.desc) setDescription(result.desc);
         if (result.total) setAmount(result.total.toString());
         if (result.tgl) {
-            // Validasi format tanggal YYYY-MM-DD sederhana
             const regexDate = /^\d{4}-\d{2}-\d{2}$/;
-            if(regexDate.test(result.tgl)){
-                setDate(result.tgl);
-            }
+            if(regexDate.test(result.tgl)) setDate(result.tgl);
         }
-        if (result.curr && currencies.some(c => c.code === result.curr)) {
-            setCurrency(result.curr);
+        if (result.curr && currencies.some(c => c.code === result.curr)) setCurrency(result.curr);
+        
+        // Masukkan daftar item ke state
+        if (result.items && Array.isArray(result.items)) {
+            const formattedItems = result.items.map(item => ({
+                name: item.n || 'Item',
+                price: item.p || 0
+            }));
+            setItems(formattedItems);
+        } else {
+            setItems([]);
         }
         
-        // Atur tipe menjadi Pengeluaran secara otomatis karena ini struk belanja
         setType('expense');
-        // Kosongkan editId jika sedang ngedit transaksi sebelumnya
         setEditId(null);
-        
-        setNotification({ type: 'success', message: 'Struk berhasil dibaca! Silakan periksa form di bawah.' });
+        setNotification({ type: 'success', message: 'Struk berhasil dibaca! Silakan periksa rincian di bawah.' });
 
       } catch (error) {
         console.error("AI Scan Error:", error);
-        setNotification({ type: 'error', message: "Gagal membaca struk. AI gagal memproses data (Error: " + (error.message || "Parse Error") + ")" });
+        setNotification({ type: 'error', message: "Gagal membaca struk. (Error: " + (error.message || "Parse Error") + ")" });
       } finally {
         setIsScanning(false);
-        e.target.value = null; // Reset input agar bisa scan gambar yang sama lagi jika perlu
+        e.target.value = null; 
       }
     };
+  };
+
+  // --- FUNGSI MANAJEMEN RINCIAN ITEM ---
+  const handleAddItem = () => {
+      setItems([...items, { name: '', price: '' }]);
+  };
+
+  const handleItemChange = (index, field, value) => {
+      const newItems = [...items];
+      newItems[index][field] = value;
+      setItems(newItems);
+      
+      // Auto-kalkulasi Total Jika Harga Item Diubah
+      if(field === 'price') {
+          let newTotal = 0;
+          newItems.forEach(item => {
+              const p = parseFloat(item.price);
+              if(!isNaN(p)) newTotal += p;
+          });
+          setAmount(newTotal.toString());
+      }
+  };
+
+  const handleRemoveItem = (index) => {
+      const newItems = items.filter((_, i) => i !== index);
+      setItems(newItems);
+      
+      // Auto-kalkulasi ulang
+      let newTotal = 0;
+      newItems.forEach(item => {
+          const p = parseFloat(item.price);
+          if(!isNaN(p)) newTotal += p;
+      });
+      setAmount(newTotal.toString());
   };
 
   const handleSaveCategory = async (e) => {
@@ -344,10 +379,15 @@ export default function App() {
     setSyncStatus('saving');
     try {
       const selectedDate = new Date(date);
+      
+      // Bersihkan item kosong sebelum disimpan
+      const cleanItems = items.filter(i => i.name.trim() !== '' || i.price !== '');
+      
       const transactionData = {
         description, amount: parseFloat(amount), type, 
         categories: selectedCategories, category: selectedCategories[0] || 'Umum', 
         currency,
+        items: cleanItems, // Menyimpan array rincian barang
         date: selectedDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
         transactionDate: selectedDate.getTime()
       };
@@ -361,7 +401,7 @@ export default function App() {
         setNotification({ type: 'success', message: 'Transaksi disimpan.' });
       }
       
-      setHomeViewDate(selectedDate); setDescription(''); setAmount(''); setDate(getCurrentDate());
+      setHomeViewDate(selectedDate); setDescription(''); setAmount(''); setDate(getCurrentDate()); setItems([]);
       const currentList = type === 'expense' ? expenseCategories : incomeCategories;
       setSelectedCategories([currentList[0]]);
     } catch (error) {
@@ -372,6 +412,11 @@ export default function App() {
 
   const handleEditClick = (t) => {
     setEditId(t.id); setDescription(t.description); setAmount(t.amount.toString()); setType(t.type);
+    
+    // Tarik daftar barang jika ada
+    if(t.items && Array.isArray(t.items)) setItems(t.items);
+    else setItems([]);
+    
     let cats = [];
     if (t.categories && Array.isArray(t.categories) && t.categories.length > 0) cats = t.categories;
     else if (t.category) cats = [t.category];
@@ -384,13 +429,18 @@ export default function App() {
   };
 
   const cancelEdit = () => {
-    setEditId(null); setDescription(''); setAmount(''); setDate(getCurrentDate());
+    setEditId(null); setDescription(''); setAmount(''); setDate(getCurrentDate()); setItems([]);
     setSelectedCategories([type === 'expense' ? expenseCategories[0] : incomeCategories[0]]);
   };
 
   const handleDelete = async (id) => {
     if (!user) return;
     try { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', id)); } catch (error) {}
+  };
+
+  const toggleExpand = (id) => {
+      if(expandedId === id) setExpandedId(null);
+      else setExpandedId(id);
   };
 
   const renderHeader = () => (
@@ -443,7 +493,7 @@ export default function App() {
           {isScanning && (
             <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
               <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-2" />
-              <p className="text-sm font-bold text-gray-700">Menganalisis Struk...</p>
+              <p className="text-sm font-bold text-gray-700">Membaca Rincian Struk...</p>
             </div>
           )}
 
@@ -455,8 +505,8 @@ export default function App() {
             {!editId && (
               <div>
                 <input type="file" accept="image/*" ref={receiptInputRef} onChange={handleScanReceipt} className="hidden" />
-                <button type="button" onClick={() => receiptInputRef.current?.click()} className="flex items-center gap-1.5 text-xs font-bold bg-purple-50 text-purple-700 px-3 py-1.5 rounded-full border border-purple-100 hover:bg-purple-100 transition-colors">
-                  <Camera className="w-3.5 h-3.5" /> Scan Struk
+                <button type="button" onClick={() => receiptInputRef.current?.click()} className="flex items-center gap-1.5 text-xs font-bold bg-purple-50 text-purple-700 px-3 py-1.5 rounded-full border border-purple-100 hover:bg-purple-100 transition-colors shadow-sm">
+                  <Camera className="w-3.5 h-3.5" /> Scan Struk Belanja
                 </button>
               </div>
             )}
@@ -469,26 +519,48 @@ export default function App() {
             </div>
             
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Deskripsi</label>
-              <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Contoh: Nasi Goreng" className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" />
-            </div>
-            
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Jumlah</label>
-                <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Mata Uang</label>
-                <div className="relative">
-                  <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 appearance-none">
-                    {currencies.map(c => <option key={c.code} value={c.code}>{c.code} - {c.symbol}</option>)}
-                  </select>
-                  <Globe className="absolute right-3 top-3 w-4 h-4 text-gray-400 pointer-events-none" />
-                </div>
-              </div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Deskripsi (Nama Toko / Kegiatan)</label>
+              <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Contoh: TRIAL Yachimata" className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium" />
             </div>
 
+            {/* --- SEKSI RINCIAN BELANJAAN --- */}
+            <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
+                <div className="flex items-center justify-between mb-3">
+                   <label className="text-xs font-bold text-gray-600 flex items-center gap-1"><Receipt className="w-3.5 h-3.5" /> Daftar Barang (Opsional)</label>
+                   <button type="button" onClick={handleAddItem} className="text-[10px] bg-white border border-gray-200 px-2 py-1 rounded shadow-sm font-medium hover:bg-gray-100">+ Tambah Baris</button>
+                </div>
+                
+                {items.length === 0 ? (
+                    <p className="text-[10px] text-gray-400 text-center italic mb-2">Scan struk atau tambah manual untuk merinci barang</p>
+                ) : (
+                    <div className="space-y-2 mb-3">
+                        {items.map((item, index) => (
+                            <div key={"item-" + index} className="flex items-center gap-2">
+                                <input type="text" placeholder="Nama brg" value={item.name} onChange={(e) => handleItemChange(index, 'name', e.target.value)} className="flex-1 min-w-0 bg-white border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400" />
+                                <input type="number" placeholder="Harga" value={item.price} onChange={(e) => handleItemChange(index, 'price', e.target.value)} className="w-20 text-right bg-white border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400" />
+                                <button type="button" onClick={() => handleRemoveItem(index)} className="text-gray-300 hover:text-rose-500"><XCircle className="w-4 h-4" /></button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+                
+                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-gray-200 border-dashed">
+                  <div>
+                    <label className="block text-[10px] text-gray-500 mb-1">Total Akhir</label>
+                    <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 font-bold text-gray-800" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 mb-1">Mata Uang</label>
+                    <div className="relative">
+                      <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 appearance-none text-xs font-bold">
+                        {currencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
+                      </select>
+                      <Globe className="absolute right-2 top-2.5 w-3 h-3 text-gray-400 pointer-events-none" />
+                    </div>
+                  </div>
+                </div>
+            </div>
+            
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Tanggal</label>
               <div className="relative">
@@ -518,7 +590,7 @@ export default function App() {
               {editId && <button type="button" onClick={cancelEdit} className="w-1/3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 rounded-xl transition-colors">Batal</button>}
               <button type="submit" disabled={!user || loading || isScanning} className={"text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed " + (editId ? "w-2/3 bg-blue-600 hover:bg-blue-700" : "w-full bg-gray-900 hover:bg-black")}>
                 {editId ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />} 
-                {editId ? "Perbarui Transaksi" : "Simpan Transaksi"}
+                {editId ? "Perbarui" : "Simpan Transaksi"}
               </button>
             </div>
           </form>
@@ -545,30 +617,58 @@ export default function App() {
                 <div key={group.date} className="animate-in fade-in slide-in-from-bottom-2">
                   <h4 className="text-sm font-bold text-gray-500 border-b border-gray-200 pb-2 mb-3 sticky top-[72px] bg-gray-50/95 backdrop-blur-sm z-10">{group.date}</h4>
                   <div className="space-y-3">
-                    {group.items.map((t) => (
-                      <div key={t.id} className="group bg-white p-4 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center justify-between">
-                        <div className="flex items-center gap-4 w-2/3">
-                          <div className={"w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 " + (t.type === 'income' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600")}>
-                             {t.type === 'income' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
-                          </div>
-                          <div className="min-w-0">
-                            <h4 className="font-semibold text-gray-800 text-sm truncate">{t.description}</h4>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {(t.categories || (t.category ? [t.category] : ['Umum'])).map(catLabel => (
-                                <span key={t.id + "-" + catLabel} className="text-[9px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">{catLabel}</span>
-                              ))}
+                    {group.items.map((t) => {
+                      const hasItems = t.items && t.items.length > 0;
+                      const isExpanded = expandedId === t.id;
+                      
+                      return (
+                      <div key={t.id} className="group bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all overflow-hidden">
+                        <div className="p-4 flex items-center justify-between">
+                            <div className="flex items-center gap-4 w-2/3">
+                              <div className={"w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 " + (t.type === 'income' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600")}>
+                                 {t.type === 'income' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
+                              </div>
+                              <div className="min-w-0">
+                                <h4 className="font-semibold text-gray-800 text-sm truncate">{t.description}</h4>
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {(t.categories || (t.category ? [t.category] : ['Umum'])).map(catLabel => (
+                                    <span key={t.id + "-" + catLabel} className="text-[9px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">{catLabel}</span>
+                                  ))}
+                                </div>
+                              </div>
                             </div>
-                          </div>
+                            <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                              <span className={"font-bold text-sm " + (t.type === 'income' ? "text-emerald-600" : "text-rose-600")}>
+                                 {t.type === 'income' ? "+" : "-"}{formatCurrency(t.amount, t.currency)}
+                              </span>
+                              <div className="flex items-center gap-2 mt-1">
+                                  {hasItems && (
+                                      <button onClick={() => toggleExpand(t.id)} className="text-[10px] flex items-center gap-0.5 text-blue-600 font-medium bg-blue-50 px-1.5 py-0.5 rounded">
+                                          Nota {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                      </button>
+                                  )}
+                                  <button onClick={() => handleEditClick(t)} className="text-gray-300 hover:text-blue-500 transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>
+                                  <button onClick={() => handleDelete(t.id)} className="text-gray-300 hover:text-rose-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                              </div>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <span className={"font-bold text-sm mr-2 " + (t.type === 'income' ? "text-emerald-600" : "text-rose-600")}>
-                             {t.type === 'income' ? "+" : "-"}{formatCurrency(t.amount, t.currency)}
-                          </span>
-                          <button onClick={() => handleEditClick(t)} className="text-gray-300 hover:text-blue-500 transition-colors p-1"><Edit2 className="w-4 h-4" /></button>
-                          <button onClick={() => handleDelete(t.id)} className="text-gray-300 hover:text-rose-500 transition-colors p-1"><Trash2 className="w-4 h-4" /></button>
-                        </div>
+                        
+                        {/* --- UI DROPDOWN RINCIAN ITEM --- */}
+                        {hasItems && isExpanded && (
+                            <div className="bg-gray-50 border-t border-gray-100 p-3 animate-in slide-in-from-top-2">
+                                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1"><Receipt className="w-3 h-3" /> Rincian Barang</p>
+                                <ul className="space-y-1.5">
+                                    {t.items.map((item, idx) => (
+                                        <li key={"det-" + idx} className="flex justify-between text-xs border-b border-gray-200/50 pb-1 last:border-0 last:pb-0">
+                                            <span className="text-gray-700">{item.name}</span>
+                                            <span className="font-medium text-gray-900">{formatCurrency(item.price || 0, t.currency)}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
                       </div>
-                    ))}
+                    )})}
                   </div>
                 </div>
               ))}
@@ -925,7 +1025,7 @@ export default function App() {
         <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data</button>
       </div>
       
-      <div className="text-center text-xs text-gray-300 pb-8">Dompetku Cloud v2.2.1 (AI Draft Edition)</div>
+      <div className="text-center text-xs text-gray-300 pb-8">Dompetku Cloud v2.3.0 (Itemized AI)</div>
     </div>
   );
 
