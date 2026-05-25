@@ -116,8 +116,11 @@ export default function App() {
 
   useEffect(() => {
     const currentList = type === 'expense' ? expenseCategories : incomeCategories;
-    setSelectedCategories([currentList[0]]);
-  }, [type, expenseCategories, incomeCategories]);
+    // Hanya ubah jika sedang tidak edit data
+    if(!editId) {
+      setSelectedCategories([currentList[0]]);
+    }
+  }, [type, expenseCategories, incomeCategories, editId]);
 
   useEffect(() => {
     if (notification) {
@@ -222,7 +225,7 @@ export default function App() {
     localStorage.setItem('gemini_api_key', val);
   };
 
-  // --- FUNGSI SCAN STRUK AI (GEMINI 2.5 FLASH + HEIC SUPPORT) ---
+  // --- FUNGSI SCAN STRUK AI (MEMASTIKAN HANYA MENGISI FORM) ---
   const handleScanReceipt = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -240,7 +243,6 @@ export default function App() {
       try {
         const base64Data = reader.result.split(',')[1];
         
-        // 1. Dukungan Format Foto .heic agar tidak ditolak sistem
         let mimeType = file.type;
         if (!mimeType) {
           if (file.name.toLowerCase().endsWith('.heic')) {
@@ -250,13 +252,13 @@ export default function App() {
           }
         }
         
-        // 2. Instruksi (Prompt) yang bebas error sintaks
-        const prompt = "Anda adalah asisten pencatat keuangan. Analisis gambar struk ini. " +
-        "Temukan Nama Toko, Total Harga Akhir (hilangkan koma/simbol mata uang), Tanggal (format YYYY-MM-DD), dan tentukan kode Mata Uang (JPY, IDR, USD). " +
-        "Kembalikan HANYA dalam format JSON MURNI (tanpa format markdown, tanpa teks lain): " +
-        "{ \"description\": \"Nama Toko\", \"amount\": angka_bulat, \"date\": \"YYYY-MM-DD\", \"currency\": \"JPY\" }";
+        // Prompt instruksi yang lebih jelas
+        const prompt = "Ekstrak data dari gambar struk/receipt belanja ini. Jika ada bahasa asing seperti Jepang (contoh: TRIAL, Lawson), terjemahkan nama toko jika perlu atau biarkan aslinya. " +
+        "PENTING: Kembalikan jawaban HANYA DALAM BENTUK JSON (tidak ada backtick, tidak ada markdown, HANYA kurung kurawal buka dan tutup). " +
+        "Format JSON yang harus dipatuhi persis: " +
+        "{\"desc\": \"Nama Toko Utama\", \"total\": angka_tanpa_koma_atau_simbol, \"tgl\": \"YYYY-MM-DD\", \"curr\": \"KODE_MATA_UANG_SEPERTI_JPY_ATAU_IDR\"} " +
+        "Catatan: 'total' harus berupa integer/number. Jika tgl tidak ketemu, gunakan format YYYY-MM-DD hari ini.";
 
-        // 3. Update Model ke gemini-2.5-flash
         const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + geminiKey, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -267,36 +269,41 @@ export default function App() {
 
         const data = await response.json();
         
-        // Memunculkan pesan error spesifik jika API Key / Kuota bermasalah
         if (data.error) throw new Error(data.error.message);
 
-        const aiText = data.candidates[0].content.parts[0].text;
+        // Membersihkan markdown jika Gemini masih bandel
+        let rawText = data.candidates[0].content.parts[0].text;
+        rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
         
-        // Pembersihan Markdown otomatis tanpa backticks
-        let cleanJson = aiText;
-        cleanJson = cleanJson.split("```json").join("");
-        cleanJson = cleanJson.split("```").join("");
-        cleanJson = cleanJson.trim();
-        
-        const result = JSON.parse(cleanJson);
+        const result = JSON.parse(rawText);
 
-        if (result.description) setDescription(result.description);
-        if (result.amount) setAmount(result.amount.toString());
-        if (result.date) setDate(result.date);
-        if (result.currency && currencies.some(c => c.code === result.currency)) {
-            setCurrency(result.currency);
+        // Memasukkan hasil AI ke dalam Form Inputan (Hanya sebagai DRAFT)
+        if (result.desc) setDescription(result.desc);
+        if (result.total) setAmount(result.total.toString());
+        if (result.tgl) {
+            // Validasi format tanggal YYYY-MM-DD sederhana
+            const regexDate = /^\d{4}-\d{2}-\d{2}$/;
+            if(regexDate.test(result.tgl)){
+                setDate(result.tgl);
+            }
+        }
+        if (result.curr && currencies.some(c => c.code === result.curr)) {
+            setCurrency(result.curr);
         }
         
+        // Atur tipe menjadi Pengeluaran secara otomatis karena ini struk belanja
         setType('expense');
-        setSelectedCategories(['Belanja']); 
-        setNotification({ type: 'success', message: 'Berhasil membaca struk!' });
+        // Kosongkan editId jika sedang ngedit transaksi sebelumnya
+        setEditId(null);
+        
+        setNotification({ type: 'success', message: 'Struk berhasil dibaca! Silakan periksa form di bawah.' });
 
       } catch (error) {
         console.error("AI Scan Error:", error);
-        setNotification({ type: 'error', message: "Error: " + (error.message || "Gagal memproses gambar") });
+        setNotification({ type: 'error', message: "Gagal membaca struk. AI gagal memproses data (Error: " + (error.message || "Parse Error") + ")" });
       } finally {
         setIsScanning(false);
-        e.target.value = null;
+        e.target.value = null; // Reset input agar bisa scan gambar yang sama lagi jika perlu
       }
     };
   };
@@ -511,7 +518,7 @@ export default function App() {
               {editId && <button type="button" onClick={cancelEdit} className="w-1/3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 rounded-xl transition-colors">Batal</button>}
               <button type="submit" disabled={!user || loading || isScanning} className={"text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed " + (editId ? "w-2/3 bg-blue-600 hover:bg-blue-700" : "w-full bg-gray-900 hover:bg-black")}>
                 {editId ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />} 
-                {editId ? "Perbarui" : "Simpan Transaksi"}
+                {editId ? "Perbarui Transaksi" : "Simpan Transaksi"}
               </button>
             </div>
           </form>
@@ -918,7 +925,7 @@ export default function App() {
         <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data</button>
       </div>
       
-      <div className="text-center text-xs text-gray-300 pb-8">Dompetku Cloud v2.2.0 (AI Edition)</div>
+      <div className="text-center text-xs text-gray-300 pb-8">Dompetku Cloud v2.2.1 (AI Draft Edition)</div>
     </div>
   );
 
@@ -1001,4 +1008,4 @@ export default function App() {
       </div>
     </div>
   );
-  }
+    }
