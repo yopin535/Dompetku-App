@@ -96,7 +96,6 @@ export default function App() {
   const [expandedId, setExpandedId] = useState(null);
 
   const [reportDate, setReportDate] = useState(new Date());
-  // Report Type sekarang ada 4: 'daily', 'weekly', 'monthly', 'yearly'
   const [reportType, setReportType] = useState('monthly'); 
   const [reportCurrency, setReportCurrency] = useState('IDR'); 
   const fileInputRef = useRef(null);
@@ -229,7 +228,6 @@ export default function App() {
     localStorage.setItem('gemini_api_key', val);
   };
 
-  // --- FUNGSI AI SCANNER ---
   const handleScanReceipt = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -253,10 +251,10 @@ export default function App() {
           else mimeType = 'image/jpeg';
         }
         
-        const prompt = "Ekstrak data dari gambar struk/receipt belanja ini. Jika ada bahasa asing seperti Jepang (contoh: TRIAL, Lawson), terjemahkan nama barang jika perlu atau biarkan aslinya asal bisa dibaca. " +
+        const prompt = "Ekstrak data dari gambar struk/receipt belanja ini. Jika bahasa asing, biarkan namanya atau terjemahkan sedikit agar mudah dimengerti. " +
         "Kembalikan HANYA format JSON MURNI tanpa markdown. Formatnya harus: " +
-        "{\"desc\": \"Nama Toko Utama\", \"total\": angka_total_tanpa_simbol, \"tgl\": \"YYYY-MM-DD\", \"curr\": \"KODE_MATA_UANG\", \"items\": [{\"n\": \"Nama Barang\", \"p\": harga_angka_saja}]} " +
-        "Catatan: 'total' dan 'p' harus NUMBER. Jika tanggal tak ketemu, pakai hari ini.";
+        "{\"desc\": \"Nama Toko/Restoran\", \"total\": angka_tanpa_simbol, \"tgl\": \"YYYY-MM-DD\", \"curr\": \"KODE_MATA_UANG\", \"items\": [{\"n\": \"Nama Barang\", \"p\": harga_angka_bulat}]} " +
+        "Catatan: 'total' dan 'p' harus NUMBER. Pajak/diskon masukkan sebagai item tersendiri di dalam list items.";
 
         const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + geminiKey, {
           method: 'POST',
@@ -485,7 +483,7 @@ export default function App() {
           {isScanning && (
             <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
               <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-2" />
-              <p className="text-sm font-bold text-gray-700">Membaca Rincian Struk...</p>
+              <p className="text-sm font-bold text-gray-700">Menganalisis Struk...</p>
             </div>
           )}
 
@@ -581,7 +579,7 @@ export default function App() {
               {editId && <button type="button" onClick={cancelEdit} className="w-1/3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 rounded-xl transition-colors">Batal</button>}
               <button type="submit" disabled={!user || loading || isScanning} className={"text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed " + (editId ? "w-2/3 bg-blue-600 hover:bg-blue-700" : "w-full bg-gray-900 hover:bg-black")}>
                 {editId ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />} 
-                {editId ? "Perbarui Transaksi" : "Simpan Transaksi"}
+                {editId ? "Perbarui" : "Simpan Transaksi"}
               </button>
             </div>
           </form>
@@ -669,22 +667,19 @@ export default function App() {
     );
   };
 
-  // --- LOGIKA FILTER LAPORAN ---
+  // --- LAPORAN ---
   const filteredByPeriod = useMemo(() => {
     return transactions.filter(t => {
       const tDate = new Date(t.transactionDate || t.createdAt);
       
       if (reportType === 'daily') {
-          // Laporan Harian: Hanya tanggal yang sama persis
           return tDate.getDate() === reportDate.getDate() && 
                  tDate.getMonth() === reportDate.getMonth() && 
                  tDate.getFullYear() === reportDate.getFullYear();
                  
       } else if (reportType === 'weekly') {
-          // Laporan Mingguan: Berdasarkan Kalender (Senin - Minggu)
           const current = new Date(reportDate);
           const day = current.getDay();
-          // Hitung selisih hari ke hari Senin terdekat (0 = Minggu, 1 = Senin)
           const diff = current.getDate() - day + (day === 0 ? -6 : 1);
           
           const startOfWeek = new Date(current);
@@ -698,10 +693,8 @@ export default function App() {
           return tDate >= startOfWeek && tDate <= endOfWeek;
           
       } else if (reportType === 'monthly') {
-          // Laporan Bulanan
           return tDate.getMonth() === reportDate.getMonth() && tDate.getFullYear() === reportDate.getFullYear();
       } else {
-          // Laporan Tahunan
           return tDate.getFullYear() === reportDate.getFullYear();
       }
     });
@@ -775,7 +768,7 @@ export default function App() {
     <div className="animate-in fade-in duration-300">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
         
-        {/* Navigasi Filter 4 Pilihan */}
+        {/* Navigasi Filter Laporan */}
         <div className="flex bg-gray-100 p-1 rounded-lg mb-6 gap-1">
           <button onClick={() => setReportType('daily')} className={"flex-1 py-1.5 text-[10px] md:text-xs font-medium rounded-md transition-all " + (reportType === 'daily' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>Harian</button>
           <button onClick={() => setReportType('weekly')} className={"flex-1 py-1.5 text-[10px] md:text-xs font-medium rounded-md transition-all " + (reportType === 'weekly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>Mingguan</button>
@@ -823,12 +816,14 @@ export default function App() {
     </div>
   );
 
+  // --- FUNGSI EXPORT & IMPORT CSV (DIPERBAIKI UNTUK MENDUKUNG RINCIAN ITEM) ---
   const downloadCSV = () => {
     if (transactions.length === 0) {
       setNotification({ type: 'error', message: 'Tidak ada data.' });
       return;
     }
-    const headers = "iso_date,tanggal_display,deskripsi,kategori,tipe,mata_uang,jumlah";
+    // Menambahkan kolom ke-8 untuk menampung rincian item
+    const headers = "iso_date,tanggal_display,deskripsi,kategori,tipe,mata_uang,jumlah,rincian_item";
     const csvRows = [headers];
     
     transactions.forEach(t => {
@@ -837,13 +832,23 @@ export default function App() {
       const catString = t.categories ? t.categories.join(' & ') : (t.category || 'Umum');
       const cleanDesc = t.description.split('"').join('""');
       
+      // Mengubah array item menjadi string (misal: "Telur::248||Susu::120")
+      let itemsString = "";
+      if (t.items && t.items.length > 0) {
+          itemsString = t.items.map(i => {
+              const cleanName = (i.name || '').split('"').join('""');
+              return cleanName + "::" + (i.price || 0);
+          }).join("||");
+      }
+      
       const row = isoDate + "," + 
                   '"' + t.date + '",' + 
                   '"' + cleanDesc + '",' + 
                   '"' + catString + '",' + 
                   t.type + "," + 
                   (t.currency || 'IDR') + "," + 
-                  t.amount;
+                  t.amount + "," +
+                  '"' + itemsString + '"';
       csvRows.push(row);
     });
     
@@ -851,7 +856,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', 'Backup_Dompetku.csv');
+    link.setAttribute('download', 'Backup_Dompetku_Lengkap.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -868,23 +873,66 @@ export default function App() {
         const rows = event.target.result.split('\n');
         let importedCount = 0;
         setLoading(true); setSyncStatus('saving');
+        
         for (let i = 1; i < rows.length; i++) {
-          const row = rows[i].trim();
-          if (!row) continue;
-          const matches = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
-          const cols = matches || row.split(',');
+          const rowText = rows[i].trim();
+          if (!rowText) continue;
+          
+          // Parser CSV Kustom yang kebal koma di dalam tanda kutip
+          const cols = [];
+          let cur = '';
+          let inQuote = false;
+          for (let j = 0; j < rowText.length; j++) {
+              const char = rowText[j];
+              if (char === '"' && rowText[j+1] === '"') {
+                  cur += '""';
+                  j++;
+              } else if (char === '"') {
+                  inQuote = !inQuote;
+              } else if (char === ',' && !inQuote) {
+                  cols.push(cur);
+                  cur = '';
+              } else {
+                  cur += char;
+              }
+          }
+          cols.push(cur);
+
           if (cols && cols.length >= 6) {
-            const clean = (str) => str ? str.replace(/^"|"$/g, '').replace(/""/g, '"') : '';
+            const clean = (str) => {
+                if(!str) return '';
+                let s = str.trim();
+                if(s.startsWith('"') && s.endsWith('"')) s = s.substring(1, s.length - 1);
+                return s.split('""').join('"');
+            };
+            
             const isoDate = clean(cols[0]);
             const description = clean(cols[2]);
             const categoryRaw = clean(cols[3]);
             const type = clean(cols[4]);
-            
             const catsArray = categoryRaw.split(' & ').map(c => c.trim()).filter(Boolean);
 
-            let curr = 'IDR'; let amt = 0;
-            if (cols.length === 7) { curr = clean(cols[5]); amt = parseFloat(clean(cols[6])); } 
-            else { amt = parseFloat(clean(cols[5])); }
+            let curr = 'IDR'; 
+            let amt = 0; 
+            let parsedItems = [];
+
+            // Membaca versi backup baru (8 kolom) atau lama (6-7 kolom)
+            if (cols.length >= 8) {
+                curr = clean(cols[5]);
+                amt = parseFloat(clean(cols[6]));
+                const itemsRaw = clean(cols[7]);
+                if (itemsRaw) {
+                    parsedItems = itemsRaw.split('||').map(itemStr => {
+                        const parts = itemStr.split('::');
+                        return { name: parts[0] || 'Item', price: parseFloat(parts[1]) || 0 };
+                    });
+                }
+            } else if (cols.length === 7) {
+                curr = clean(cols[5]);
+                amt = parseFloat(clean(cols[6]));
+            } else {
+                amt = parseFloat(clean(cols[5]));
+            }
             
             if (isoDate && description && !isNaN(amt)) {
               const dateObj = new Date(isoDate);
@@ -893,6 +941,7 @@ export default function App() {
                 categories: catsArray.length > 0 ? catsArray : ['Umum'],
                 category: catsArray[0] || 'Umum',
                 currency: curr,
+                items: parsedItems,
                 date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
                 transactionDate: dateObj.getTime(), createdAt: Date.now()
               });
@@ -903,7 +952,7 @@ export default function App() {
         setLoading(false); setNotification({ type: 'success', message: 'Berhasil mengimpor ' + importedCount + ' transaksi.' });
         e.target.value = null;
       } catch (error) {
-        setLoading(false); setNotification({ type: 'error', message: 'Gagal import.' });
+        setLoading(false); setNotification({ type: 'error', message: 'Gagal import file CSV.' });
       } finally { setSyncStatus('synced'); }
     };
     reader.readAsText(file);
@@ -941,6 +990,7 @@ export default function App() {
         await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), {
           description: item.desc, amount: item.amount, type: item.type, 
           categories: item.cats, category: item.cats[0], currency: item.curr,
+          items: [],
           date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
           transactionDate: dateObj.getTime(), createdAt: Date.now()
         });
@@ -1019,13 +1069,13 @@ export default function App() {
           <button onClick={downloadCSV} disabled={transactions.length === 0} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 transition-all group">
             <div className="flex items-center gap-3">
               <div className="bg-blue-100 p-2 rounded-lg group-hover:bg-blue-200 transition-colors"><Download className="w-5 h-5 text-blue-600" /></div>
-              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Export ke Excel</p><p className="text-xs text-gray-400">Unduh file .csv untuk arsip</p></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Export ke Excel</p><p className="text-xs text-gray-400">Unduh file backup</p></div>
             </div>
           </button>
           <button onClick={handleImportClick} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-200 hover:border-emerald-200 transition-all group">
              <div className="flex items-center gap-3">
               <div className="bg-emerald-100 p-2 rounded-lg group-hover:bg-emerald-200 transition-colors"><Upload className="w-5 h-5 text-emerald-600" /></div>
-              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Restore Data</p><p className="text-xs text-gray-400">Kembalikan data dari file backup</p></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Restore Data</p><p className="text-xs text-gray-400">Kembalikan data dari backup</p></div>
             </div>
           </button>
           <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv" className="hidden" />
@@ -1126,4 +1176,4 @@ export default function App() {
       </div>
     </div>
   );
-  }
+          }
