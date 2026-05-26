@@ -88,15 +88,15 @@ export default function App() {
   const [currency, setCurrency] = useState('IDR'); 
   const [date, setDate] = useState(getCurrentDate());
   const [selectedCategories, setSelectedCategories] = useState(['Makanan']);
-  const [items, setItems] = useState([]); // Array untuk menyimpan daftar belanjaan
+  const [items, setItems] = useState([]); 
   
   const [editId, setEditId] = useState(null);
   const [homeViewDate, setHomeViewDate] = useState(new Date());
   
-  // State untuk melacak rincian transaksi mana yang sedang dibuka (expand)
   const [expandedId, setExpandedId] = useState(null);
 
   const [reportDate, setReportDate] = useState(new Date());
+  // Report Type sekarang ada 4: 'daily', 'weekly', 'monthly', 'yearly'
   const [reportType, setReportType] = useState('monthly'); 
   const [reportCurrency, setReportCurrency] = useState('IDR'); 
   const fileInputRef = useRef(null);
@@ -229,7 +229,7 @@ export default function App() {
     localStorage.setItem('gemini_api_key', val);
   };
 
-  // --- FUNGSI AI: MEMBACA STRUK & ITEM BARANG ---
+  // --- FUNGSI AI SCANNER ---
   const handleScanReceipt = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -253,11 +253,10 @@ export default function App() {
           else mimeType = 'image/jpeg';
         }
         
-        // Meminta AI membaca Rincian Barang (items array)
-        const prompt = "Ekstrak data dari gambar struk/receipt belanja ini. Jika bahasa asing, biarkan namanya atau terjemahkan sedikit agar mudah dimengerti. " +
-        "Kembalikan HANYA format JSON MURNI dengan struktur persis ini: " +
-        "{\"desc\": \"Nama Toko/Restoran\", \"total\": angka_tanpa_simbol, \"tgl\": \"YYYY-MM-DD\", \"curr\": \"KODE_MATA_UANG\", \"items\": [{\"n\": \"Nama Barang\", \"p\": harga_barang_angka_bulat}]} " +
-        "Catatan: Pajak/diskon masukkan sebagai item tersendiri di dalam list items.";
+        const prompt = "Ekstrak data dari gambar struk/receipt belanja ini. Jika ada bahasa asing seperti Jepang (contoh: TRIAL, Lawson), terjemahkan nama barang jika perlu atau biarkan aslinya asal bisa dibaca. " +
+        "Kembalikan HANYA format JSON MURNI tanpa markdown. Formatnya harus: " +
+        "{\"desc\": \"Nama Toko Utama\", \"total\": angka_total_tanpa_simbol, \"tgl\": \"YYYY-MM-DD\", \"curr\": \"KODE_MATA_UANG\", \"items\": [{\"n\": \"Nama Barang\", \"p\": harga_angka_saja}]} " +
+        "Catatan: 'total' dan 'p' harus NUMBER. Jika tanggal tak ketemu, pakai hari ini.";
 
         const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + geminiKey, {
           method: 'POST',
@@ -284,7 +283,6 @@ export default function App() {
         }
         if (result.curr && currencies.some(c => c.code === result.curr)) setCurrency(result.curr);
         
-        // Masukkan daftar item ke state
         if (result.items && Array.isArray(result.items)) {
             const formattedItems = result.items.map(item => ({
                 name: item.n || 'Item',
@@ -309,7 +307,6 @@ export default function App() {
     };
   };
 
-  // --- FUNGSI MANAJEMEN RINCIAN ITEM ---
   const handleAddItem = () => {
       setItems([...items, { name: '', price: '' }]);
   };
@@ -319,7 +316,6 @@ export default function App() {
       newItems[index][field] = value;
       setItems(newItems);
       
-      // Auto-kalkulasi Total Jika Harga Item Diubah
       if(field === 'price') {
           let newTotal = 0;
           newItems.forEach(item => {
@@ -334,7 +330,6 @@ export default function App() {
       const newItems = items.filter((_, i) => i !== index);
       setItems(newItems);
       
-      // Auto-kalkulasi ulang
       let newTotal = 0;
       newItems.forEach(item => {
           const p = parseFloat(item.price);
@@ -379,15 +374,13 @@ export default function App() {
     setSyncStatus('saving');
     try {
       const selectedDate = new Date(date);
-      
-      // Bersihkan item kosong sebelum disimpan
       const cleanItems = items.filter(i => i.name.trim() !== '' || i.price !== '');
       
       const transactionData = {
         description, amount: parseFloat(amount), type, 
         categories: selectedCategories, category: selectedCategories[0] || 'Umum', 
         currency,
-        items: cleanItems, // Menyimpan array rincian barang
+        items: cleanItems,
         date: selectedDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
         transactionDate: selectedDate.getTime()
       };
@@ -413,7 +406,6 @@ export default function App() {
   const handleEditClick = (t) => {
     setEditId(t.id); setDescription(t.description); setAmount(t.amount.toString()); setType(t.type);
     
-    // Tarik daftar barang jika ada
     if(t.items && Array.isArray(t.items)) setItems(t.items);
     else setItems([]);
     
@@ -523,7 +515,6 @@ export default function App() {
               <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Contoh: TRIAL Yachimata" className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium" />
             </div>
 
-            {/* --- SEKSI RINCIAN BELANJAAN --- */}
             <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
                 <div className="flex items-center justify-between mb-3">
                    <label className="text-xs font-bold text-gray-600 flex items-center gap-1"><Receipt className="w-3.5 h-3.5" /> Daftar Barang (Opsional)</label>
@@ -590,7 +581,7 @@ export default function App() {
               {editId && <button type="button" onClick={cancelEdit} className="w-1/3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 rounded-xl transition-colors">Batal</button>}
               <button type="submit" disabled={!user || loading || isScanning} className={"text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed " + (editId ? "w-2/3 bg-blue-600 hover:bg-blue-700" : "w-full bg-gray-900 hover:bg-black")}>
                 {editId ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />} 
-                {editId ? "Perbarui" : "Simpan Transaksi"}
+                {editId ? "Perbarui Transaksi" : "Simpan Transaksi"}
               </button>
             </div>
           </form>
@@ -653,7 +644,6 @@ export default function App() {
                             </div>
                         </div>
                         
-                        {/* --- UI DROPDOWN RINCIAN ITEM --- */}
                         {hasItems && isExpanded && (
                             <div className="bg-gray-50 border-t border-gray-100 p-3 animate-in slide-in-from-top-2">
                                 <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1"><Receipt className="w-3 h-3" /> Rincian Barang</p>
@@ -679,12 +669,41 @@ export default function App() {
     );
   };
 
-  // --- LAPORAN ---
+  // --- LOGIKA FILTER LAPORAN ---
   const filteredByPeriod = useMemo(() => {
     return transactions.filter(t => {
       const tDate = new Date(t.transactionDate || t.createdAt);
-      if (reportType === 'yearly') return tDate.getFullYear() === reportDate.getFullYear();
-      else return tDate.getMonth() === reportDate.getMonth() && tDate.getFullYear() === reportDate.getFullYear();
+      
+      if (reportType === 'daily') {
+          // Laporan Harian: Hanya tanggal yang sama persis
+          return tDate.getDate() === reportDate.getDate() && 
+                 tDate.getMonth() === reportDate.getMonth() && 
+                 tDate.getFullYear() === reportDate.getFullYear();
+                 
+      } else if (reportType === 'weekly') {
+          // Laporan Mingguan: Berdasarkan Kalender (Senin - Minggu)
+          const current = new Date(reportDate);
+          const day = current.getDay();
+          // Hitung selisih hari ke hari Senin terdekat (0 = Minggu, 1 = Senin)
+          const diff = current.getDate() - day + (day === 0 ? -6 : 1);
+          
+          const startOfWeek = new Date(current);
+          startOfWeek.setDate(diff);
+          startOfWeek.setHours(0, 0, 0, 0);
+          
+          const endOfWeek = new Date(startOfWeek);
+          endOfWeek.setDate(startOfWeek.getDate() + 6);
+          endOfWeek.setHours(23, 59, 59, 999);
+          
+          return tDate >= startOfWeek && tDate <= endOfWeek;
+          
+      } else if (reportType === 'monthly') {
+          // Laporan Bulanan
+          return tDate.getMonth() === reportDate.getMonth() && tDate.getFullYear() === reportDate.getFullYear();
+      } else {
+          // Laporan Tahunan
+          return tDate.getFullYear() === reportDate.getFullYear();
+      }
     });
   }, [transactions, reportDate, reportType]);
 
@@ -710,14 +729,35 @@ export default function App() {
 
   const changeReportPeriod = (increment) => {
     const newDate = new Date(reportDate);
-    if (reportType === 'yearly') newDate.setFullYear(newDate.getFullYear() + increment);
-    else newDate.setMonth(newDate.getMonth() + increment);
+    if (reportType === 'yearly') {
+        newDate.setFullYear(newDate.getFullYear() + increment);
+    } else if (reportType === 'monthly') {
+        newDate.setMonth(newDate.getMonth() + increment);
+    } else if (reportType === 'weekly') {
+        newDate.setDate(newDate.getDate() + (increment * 7));
+    } else if (reportType === 'daily') {
+        newDate.setDate(newDate.getDate() + increment);
+    }
     setReportDate(newDate);
   };
 
   const getReportTitle = () => {
-    if (reportType === 'yearly') return reportDate.getFullYear();
-    if (reportType === 'monthly') return reportDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+    if (reportType === 'yearly') {
+        return reportDate.getFullYear();
+    } else if (reportType === 'monthly') {
+        return reportDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+    } else if (reportType === 'weekly') {
+        const current = new Date(reportDate);
+        const day = current.getDay();
+        const diff = current.getDate() - day + (day === 0 ? -6 : 1);
+        const start = new Date(current); 
+        start.setDate(diff); 
+        const end = new Date(start); 
+        end.setDate(start.getDate() + 6);
+        return start.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) + " - " + end.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+    } else if (reportType === 'daily') {
+        return reportDate.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+    }
     return '';
   };
 
@@ -734,9 +774,13 @@ export default function App() {
   const renderReportView = () => (
     <div className="animate-in fade-in duration-300">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
-        <div className="flex bg-gray-100 p-1 rounded-lg mb-6">
-          <button onClick={() => setReportType('monthly')} className={"flex-1 py-1.5 text-xs font-medium rounded-md transition-all " + (reportType === 'monthly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>Bulanan</button>
-          <button onClick={() => setReportType('yearly')} className={"flex-1 py-1.5 text-xs font-medium rounded-md transition-all " + (reportType === 'yearly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>Tahunan</button>
+        
+        {/* Navigasi Filter 4 Pilihan */}
+        <div className="flex bg-gray-100 p-1 rounded-lg mb-6 gap-1">
+          <button onClick={() => setReportType('daily')} className={"flex-1 py-1.5 text-[10px] md:text-xs font-medium rounded-md transition-all " + (reportType === 'daily' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>Harian</button>
+          <button onClick={() => setReportType('weekly')} className={"flex-1 py-1.5 text-[10px] md:text-xs font-medium rounded-md transition-all " + (reportType === 'weekly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>Mingguan</button>
+          <button onClick={() => setReportType('monthly')} className={"flex-1 py-1.5 text-[10px] md:text-xs font-medium rounded-md transition-all " + (reportType === 'monthly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>Bulanan</button>
+          <button onClick={() => setReportType('yearly')} className={"flex-1 py-1.5 text-[10px] md:text-xs font-medium rounded-md transition-all " + (reportType === 'yearly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>Tahunan</button>
         </div>
         
         <div className="flex justify-center mb-4">
@@ -751,7 +795,7 @@ export default function App() {
 
         <div className="flex items-center justify-between mb-4">
           <button onClick={() => changeReportPeriod(-1)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
-          <div className="text-center"><h2 className="font-bold text-gray-900 text-lg">{getReportTitle()}</h2></div>
+          <div className="text-center"><h2 className="font-bold text-gray-900 text-[15px]">{getReportTitle()}</h2></div>
           <button onClick={() => changeReportPeriod(1)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ChevronRight className="w-5 h-5 text-gray-600" /></button>
         </div>
         
@@ -763,39 +807,14 @@ export default function App() {
           <p className="text-xs text-gray-500 mb-1">Arus Kas Bersih (Net Cashflow)</p>
           <p className={"text-2xl font-bold " + getBalanceTextClass()}>{reportSummary.balance >= 0 ? "+" : ""}{formatCurrency(reportSummary.balance, reportCurrency)}</p>
         </div>
-        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><PieChart className="w-4 h-4 text-gray-500" /> Statistik Pengeluaran (Berdasarkan Label Utama)</h3>
-        {categoryStats.length === 0 ? <div className="text-center py-8 text-gray-400 text-sm">Belum ada data.</div> : (
+        
+        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><PieChart className="w-4 h-4 text-gray-500" /> Statistik Pengeluaran</h3>
+        {categoryStats.length === 0 ? <div className="text-center py-8 text-gray-400 text-sm">Belum ada data di periode ini.</div> : (
           <div className="space-y-4">
             {categoryStats.map((cat) => (
               <div key={cat.name}>
                 <div className="flex justify-between text-sm mb-1"><span className="text-gray-700 font-medium">{cat.name}</span><div className="text-right"><span className="text-gray-900 font-bold">{formatCurrency(cat.amount, reportCurrency)}</span><span className="text-xs text-gray-500 ml-1">({Math.round(cat.percentage)}%)</span></div></div>
                 <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden"><div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style={{ width: String(cat.percentage) + "%" }}></div></div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
-        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><List className="w-4 h-4 text-gray-500" /> Rincian Transaksi ({reportCurrency})</h3>
-        {reportTransactions.length === 0 ? <div className="text-center py-8 text-gray-400 text-sm">Tidak ada transaksi.</div> : (
-          <div className="space-y-3">
-            {[...reportTransactions].sort((a, b) => new Date(b.transactionDate || b.createdAt) - new Date(a.transactionDate || a.createdAt)).map((t) => (
-              <div key={t.id} className="flex justify-between items-center py-2 border-b border-gray-50 last:border-0">
-                <div className="flex items-center gap-3 w-2/3">
-                   <div className={"w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 " + (t.type === 'income' ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600")}>
-                     {t.type === 'income' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                   </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-800 truncate">{t.description}</p>
-                      <div className="flex flex-wrap items-center gap-1 mt-0.5">
-                        <span className="text-[9px] text-gray-400">{t.date}</span>
-                        {(t.categories || (t.category ? [t.category] : ['Umum'])).map(catLabel => (
-                           <span key={"rep-" + t.id + "-" + catLabel} className="text-[8px] bg-gray-100 text-gray-600 px-1 py-0.5 rounded font-medium">{catLabel}</span>
-                        ))}
-                      </div>
-                    </div>
-                </div>
-                <div className="text-right flex-shrink-0 ml-2"><p className={"text-sm font-bold " + (t.type === 'income' ? "text-emerald-600" : "text-rose-600")}>{t.type === 'income' ? "+" : "-"}{formatCurrency(t.amount, t.currency)}</p></div>
               </div>
             ))}
           </div>
@@ -816,7 +835,6 @@ export default function App() {
       const dateObj = new Date(t.transactionDate || t.createdAt);
       const isoDate = dateObj.toISOString().split('T')[0];
       const catString = t.categories ? t.categories.join(' & ') : (t.category || 'Umum');
-      
       const cleanDesc = t.description.split('"').join('""');
       
       const row = isoDate + "," + 
@@ -1025,7 +1043,7 @@ export default function App() {
         <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data</button>
       </div>
       
-      <div className="text-center text-xs text-gray-300 pb-8">Dompetku Cloud v2.3.0 (Itemized AI)</div>
+      <div className="text-center text-xs text-gray-300 pb-8">Dompetku Cloud v2.5.0 (AI + All Reports)</div>
     </div>
   );
 
@@ -1108,4 +1126,4 @@ export default function App() {
       </div>
     </div>
   );
-    }
+  }
