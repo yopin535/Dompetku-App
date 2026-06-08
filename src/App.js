@@ -433,9 +433,17 @@ export default function App() {
     } catch (error) { setSyncStatus('offline'); }
   };
 
-  // FIX: Mengganti multiselect jadi single-select yang mantap agar tidak ada bug lompat/tidak bisa dipilih
+  // Mengembalikan fitur multi-select untuk memilih lebih dari 1 kategori
   const toggleCategory = (cat) => {
-    setSelectedCategories([cat]);
+    if (selectedCategories.includes(cat)) {
+      if (selectedCategories.length > 1) {
+        setSelectedCategories(selectedCategories.filter(c => c !== cat));
+      } else {
+        setNotification({ type: 'error', message: 'Minimal pilih 1 kategori.' });
+      }
+    } else {
+      setSelectedCategories([...selectedCategories, cat]);
+    }
   };
 
   const handleAddTransaction = async (e) => {
@@ -1559,4 +1567,4 @@ export default function App() {
       </div>
     </div>
   );
-                                               }
+      }
