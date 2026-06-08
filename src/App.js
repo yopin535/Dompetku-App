@@ -4,7 +4,7 @@ import {
   Cloud, Loader2, Tag, Calendar, PieChart, List, ChevronLeft, ChevronRight, 
   Download, Upload, FileText, CheckCircle, XCircle, X, Settings, Sparkles,
   LogOut, LogIn, AlertTriangle, User, Info, Check, CloudOff, RefreshCw, Globe, Edit2, Camera,
-  ChevronDown, ChevronUp, Receipt, ArrowRightLeft, CreditCard, Landmark
+  ChevronDown, ChevronUp, Receipt, ArrowRightLeft, CreditCard, Landmark, Eye, EyeOff
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -61,14 +61,16 @@ export default function App() {
   const [notification, setNotification] = useState(null);
   const [syncStatus, setSyncStatus] = useState('synced');
   
-  // --- PENGATURAN BAWAAN ---
+  // --- PENGATURAN BAWAAN & PRIVASI ---
   const [defaultCurrency, setDefaultCurrency] = useState(localStorage.getItem('defaultCurrency') || 'JPY');
   const [geminiKey, setGeminiKey] = useState(localStorage.getItem('gemini_api_key') || '');
+  const [hideBalance, setHideBalance] = useState(false); 
   
   const [showFloatingAdd, setShowFloatingAdd] = useState(false);
   const [showCatModal, setShowCatModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [showWalletModal, setShowWalletModal] = useState(false);
+  const [showDummyModal, setShowDummyModal] = useState(false); 
   const [newCatName, setNewCatName] = useState('');
 
   const getCurrentDate = () => {
@@ -86,7 +88,7 @@ export default function App() {
   ];
 
   // --- FORM STATES ---
-  const [type, setType] = useState('expense'); // 'expense', 'income', 'transfer'
+  const [type, setType] = useState('expense'); 
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState(defaultCurrency); 
@@ -131,15 +133,13 @@ export default function App() {
     return [...defaultIncomeCategories, ...custom];
   }, [customCategories]);
 
-  // Set kategori & mata uang default saat form kosong
+  // FIX: Reset kategori default hanya saat ganti tab (expense/income) & tidak sedang edit
   useEffect(() => {
     if(!editId && type !== 'transfer') {
-      const currentList = type === 'expense' ? expenseCategories : incomeCategories;
-      setSelectedCategories([currentList[0]]);
+       setSelectedCategories([type === 'expense' ? 'Makanan' : 'Gaji']);
     }
-  }, [type, expenseCategories, incomeCategories, editId]);
+  }, [type, editId]);
 
-  // Set dompet otomatis pertama kali
   useEffect(() => {
       if(wallets.length > 0 && !walletId && !editId) {
           setWalletId(wallets[0].id);
@@ -191,11 +191,9 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // --- MENGAMBIL DATA FIREBASE ---
   useEffect(() => {
     if (!user) return;
 
-    // Load Transaksi
     const transRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
     const unsubTrans = onSnapshot(transRef, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -205,23 +203,24 @@ export default function App() {
         return dateB - dateA; 
       });
       setTransactions(data);
+      setLoading(false);
       if (navigator.onLine) setTimeout(() => setSyncStatus('synced'), 800); 
+    }, (error) => {
+      console.error("Error trans:", error);
+      setSyncStatus('offline');
     });
 
-    // Load Kategori
     const catRef = collection(db, 'artifacts', appId, 'users', user.uid, 'categories');
     const unsubCat = onSnapshot(catRef, (snapshot) => {
       const cats = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setCustomCategories(cats);
     });
 
-    // Load Dompet
     const walRef = collection(db, 'artifacts', appId, 'users', user.uid, 'wallets');
     const unsubWal = onSnapshot(walRef, async (snapshot) => {
       const wals = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setWallets(wals);
       
-      // Auto-create Dompet Utama jika kosong pertama kali
       if (wals.length === 0 && !checkWalletRef.current) {
           checkWalletRef.current = true;
           try {
@@ -249,7 +248,7 @@ export default function App() {
     }
   };
 
-  // --- PERHITUNGAN SALDO DOMPET BERDASARKAN TRANSAKSI ---
+  // --- PERHITUNGAN SALDO & KEKAYAAN BERSIH ---
   const walletBalances = useMemo(() => {
     const balances = {};
     wallets.forEach(w => balances[w.id] = parseFloat(w.initialBalance || 0));
@@ -260,11 +259,9 @@ export default function App() {
        } else if (t.type === 'expense') {
            if(balances[t.walletId] !== undefined) balances[t.walletId] -= parseFloat(t.amount || 0);
        } else if (t.type === 'transfer') {
-           // Kurangi dompet asal (jumlah + admin)
            if(balances[t.walletId] !== undefined) {
                balances[t.walletId] -= (parseFloat(t.amount || 0) + parseFloat(t.adminFee || 0));
            }
-           // Tambah dompet tujuan (uang yang diterima)
            if(balances[t.toWalletId] !== undefined) {
                balances[t.toWalletId] += parseFloat(t.receivedAmount || t.amount || 0);
            }
@@ -273,7 +270,15 @@ export default function App() {
     return balances;
   }, [wallets, transactions]);
 
-  // --- SIMPAN PENGATURAN ---
+  const totalBalancesByCurrency = useMemo(() => {
+      const totals = {};
+      wallets.forEach(w => {
+          const curr = w.currency || defaultCurrency;
+          totals[curr] = (totals[curr] || 0) + (walletBalances[w.id] || 0);
+      });
+      return totals;
+  }, [wallets, walletBalances, defaultCurrency]);
+
   const handleSaveSettings = (key, val) => {
       if(key === 'gemini') {
           setGeminiKey(val); localStorage.setItem('gemini_api_key', val);
@@ -302,7 +307,6 @@ export default function App() {
     } catch (error) { console.error(error); }
   };
 
-  // --- FUNGSI DOMPET BARU ---
   const handleSaveWallet = async (e) => {
       e.preventDefault();
       if (!newWalletName || !user) return;
@@ -367,7 +371,6 @@ export default function App() {
             if(regexDate.test(result.tgl)) setDate(result.tgl);
         }
         
-        // Pilih dompet berdasarkan mata uang
         if (result.curr && currencies.some(c => c.code === result.curr)) {
             const matchedWallet = wallets.find(w => w.currency === result.curr);
             if(matchedWallet) setWalletId(matchedWallet.id);
@@ -390,7 +393,6 @@ export default function App() {
     };
   };
 
-  // --- ITEM HANDLERS ---
   const handleAddItem = () => setItems([...items, { name: '', price: '' }]);
   const handleItemChange = (index, field, value) => {
       const newItems = [...items];
@@ -410,12 +412,36 @@ export default function App() {
       setAmount(newTotal.toString());
   };
 
-  // --- SIMPAN TRANSAKSI ---
+  const handleSaveCategory = async (e) => {
+    e.preventDefault();
+    const newCat = newCatName.trim();
+    if (!newCat || !user) return;
+    setSyncStatus('saving');
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'categories'), { name: newCat, type, createdAt: Date.now() });
+      setSelectedCategories([newCat]);
+      setNewCatName(''); setNotification({ type: 'success', message: 'Kategori ditambahkan.' }); setShowCatModal(false);
+    } catch (error) { setSyncStatus('offline'); }
+  };
+
+  const handleDeleteCategory = async (catId) => {
+    if (!user) return;
+    setSyncStatus('saving');
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'categories', catId));
+      setNotification({ type: 'success', message: 'Kategori dihapus.' });
+    } catch (error) { setSyncStatus('offline'); }
+  };
+
+  // FIX: Mengganti multiselect jadi single-select yang mantap agar tidak ada bug lompat/tidak bisa dipilih
+  const toggleCategory = (cat) => {
+    setSelectedCategories([cat]);
+  };
+
   const handleAddTransaction = async (e) => {
     e.preventDefault();
     if (!amount || !date || !user || !walletId) return;
     
-    // Validasi Transfer
     if (type === 'transfer') {
         if(!toWalletId || walletId === toWalletId) {
             setNotification({ type: 'error', message: 'Pilih dompet tujuan yang berbeda!' }); return;
@@ -449,7 +475,6 @@ export default function App() {
           transactionData.targetCurrency = wTujuan?.currency || defaultCurrency;
           transactionData.adminFee = parseFloat(adminFee || 0);
           
-          // Jika beda mata uang, simpan kurs/received
           if (wAsal?.currency !== wTujuan?.currency) {
               transactionData.receivedAmount = parseFloat(receivedAmount || amount);
           } else {
@@ -525,22 +550,61 @@ export default function App() {
       else setExpandedId(id);
   };
 
-  // --- UI COMPONENTS ---
-  const renderHeader = () => (
-    <div className="sticky top-0 bg-gray-50/95 backdrop-blur-sm z-20 px-4 py-4 border-b border-gray-200 md:border-none md:static md:px-0 md:py-0 md:bg-transparent">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">Dompetku Cloud</h1>
-          <div className="flex items-center gap-2 mt-1">
-            {syncStatus === 'saving' && <span className="flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full"><RefreshCw className="w-3 h-3 animate-spin" /> Menyimpan...</span>}
-            {syncStatus === 'synced' && <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full"><Check className="w-3 h-3" /> Tersimpan</span>}
-            {syncStatus === 'offline' && <span className="flex items-center gap-1 text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full"><CloudOff className="w-3 h-3" /> Offline</span>}
-          </div>
-        </div>
-        <div className="bg-blue-100 p-2 rounded-full"><Wallet className="w-6 h-6 text-blue-600" /></div>
-      </header>
-    </div>
-  );
+  // --- UI COMPONENTS: HEADER BARU (SUPER RINGKAS TANPA NAMA & DOMPETKU) ---
+  const renderHeader = () => {
+    return (
+      <div className="bg-gradient-to-b from-blue-700 to-indigo-800 px-5 pt-6 pb-6 text-white rounded-b-[2rem] shadow-lg mb-2 relative overflow-hidden">
+         <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+            <Sparkles className="w-32 h-32" />
+         </div>
+         
+         <div className="relative z-10">
+            <div className="flex justify-between items-start mb-1">
+               <div className="flex items-center gap-2">
+                  <p className="text-xs text-blue-200 font-medium">Total Kekayaan Bersih ({defaultCurrency})</p>
+                  <button onClick={() => setHideBalance(!hideBalance)} className="text-blue-200 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors">
+                     {hideBalance ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+               </div>
+               <div className="flex items-center gap-3">
+                  {syncStatus === 'saving' && <RefreshCw className="w-4 h-4 text-blue-200 animate-spin" />}
+                  {syncStatus === 'synced' && <Cloud className="w-4 h-4 text-blue-200" />}
+                  {syncStatus === 'offline' && <CloudOff className="w-4 h-4 text-rose-300" />}
+                  <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center border border-white/30 backdrop-blur-sm shadow-sm cursor-pointer hover:bg-white/30 transition-all" onClick={() => setView('settings')}>
+                     {user && user.photoURL && !user.isAnonymous ? (
+                        <img src={user.photoURL} alt="Profil" className="w-full h-full rounded-full object-cover" />
+                     ) : (
+                        <User className="w-4 h-4 text-white" />
+                     )}
+                  </div>
+               </div>
+            </div>
+            
+            <div className="flex items-baseline gap-2">
+               <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
+                  {hideBalance ? '••••••••' : formatCurrency(totalBalancesByCurrency[defaultCurrency] || 0, defaultCurrency)}
+               </h1>
+            </div>
+            
+            {Object.keys(totalBalancesByCurrency).length > 1 && (
+               <div className="mt-2.5 flex flex-wrap gap-2">
+                  {Object.keys(totalBalancesByCurrency).filter(c => c !== defaultCurrency).map(c => (
+                     <span key={c} className="text-[10px] font-medium bg-black/20 px-2 py-1 rounded-full border border-white/10 backdrop-blur-md">
+                        {hideBalance ? '•••' : formatCurrency(totalBalancesByCurrency[c], c)}
+                     </span>
+                  ))}
+               </div>
+            )}
+         </div>
+      </div>
+    );
+  };
+
+  const changeHomeMonth = (increment) => {
+    const newDate = new Date(homeViewDate);
+    newDate.setMonth(newDate.getMonth() + increment);
+    setHomeViewDate(newDate);
+  };
 
   const { groupedHomeTransactions, homeTransactionsCount } = useMemo(() => {
     const filtered = transactions.filter(t => {
@@ -558,7 +622,9 @@ export default function App() {
 
   const getLabelClass = (cat) => {
     if (!selectedCategories.includes(cat)) return "bg-white text-gray-600 border-gray-200 hover:border-gray-300";
-    return type === 'expense' ? "bg-rose-600 text-white border-rose-600 shadow-sm" : "bg-emerald-600 text-white border-emerald-600 shadow-sm";
+    return type === 'expense' 
+      ? "bg-rose-600 text-white border-rose-600 shadow-sm" 
+      : "bg-emerald-600 text-white border-emerald-600 shadow-sm";
   };
 
   const renderHomeView = () => {
@@ -569,23 +635,27 @@ export default function App() {
     return (
       <div className="animate-in fade-in duration-300">
         
-        {/* --- DAFTAR DOMPET KARTU ATAS --- */}
         {wallets.length > 0 && (
-            <div className="flex overflow-x-auto gap-3 pb-4 pt-2 mt-2 snap-x hide-scrollbar px-1">
+            <div className="flex overflow-x-auto gap-3 pb-4 pt-1 snap-x hide-scrollbar px-1">
                {wallets.map(w => (
-                  <div key={w.id} className="min-w-[140px] bg-gradient-to-br from-blue-700 to-indigo-900 rounded-2xl p-4 text-white shadow-lg snap-start border border-blue-500/30">
-                     <p className="text-[10px] font-medium text-blue-100 flex items-center gap-1"><Landmark className="w-3 h-3" /> {w.name}</p>
-                     <p className="font-bold text-base mt-1.5">{formatCurrency(walletBalances[w.id] || 0, w.currency)}</p>
+                  <div key={w.id} className="min-w-[145px] bg-white rounded-2xl p-4 shadow-sm border border-gray-100 snap-start flex flex-col justify-between hover:border-blue-200 transition-colors">
+                     <p className="text-[10px] font-bold text-gray-400 flex items-center gap-1.5 uppercase tracking-wider">
+                         <span className="bg-blue-50 p-1 rounded-md"><Landmark className="w-3 h-3 text-blue-500" /></span> 
+                         {w.name}
+                     </p>
+                     <p className="font-bold text-base mt-2.5 text-gray-800">
+                         {hideBalance ? '••••••' : formatCurrency(walletBalances[w.id] || 0, w.currency)}
+                     </p>
                   </div>
                ))}
-               <button onClick={() => setShowWalletModal(true)} className="min-w-[100px] border-2 border-dashed border-gray-300 rounded-2xl flex flex-col items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-blue-600 transition-colors snap-start">
+               <button onClick={() => setShowWalletModal(true)} className="min-w-[110px] border-2 border-dashed border-gray-200 bg-gray-50/50 rounded-2xl flex flex-col items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-blue-600 hover:border-blue-300 transition-colors snap-start">
                    <Plus className="w-6 h-6 mb-1" />
                    <span className="text-[10px] font-bold">Dompet Baru</span>
                </button>
             </div>
         )}
 
-        <div className={"bg-white rounded-2xl shadow-sm border p-5 mb-6 transition-all relative overflow-hidden " + (editId ? "border-blue-300 ring-4 ring-blue-50" : "border-gray-100")}>
+        <div className={"bg-white rounded-2xl shadow-sm border p-5 mb-6 mt-2 transition-all relative overflow-hidden " + (editId ? "border-blue-300 ring-4 ring-blue-50" : "border-gray-100")}>
           {isScanning && (
             <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
               <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-2" />
@@ -615,7 +685,6 @@ export default function App() {
               <button type="button" onClick={() => setType('transfer')} className={"flex-1 flex items-center justify-center rounded-md text-[11px] md:text-xs font-bold transition-all " + (type === 'transfer' ? "bg-blue-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}><ArrowRightLeft className="w-3 h-3 mr-1" /> Transfer</button>
             </div>
             
-            {/* TAMPILAN JIKA TRANSFER */}
             {type === 'transfer' ? (
                 <div className="space-y-4 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
                    <div className="grid grid-cols-2 gap-3">
@@ -664,7 +733,6 @@ export default function App() {
                    </div>
                 </div>
             ) : (
-                // --- TAMPILAN NORMAL (INCOME / EXPENSE) ---
                 <>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><CreditCard className="w-3.5 h-3.5" /> Dompet Sumber</label>
@@ -713,10 +781,15 @@ export default function App() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-2">Kategori (Pilih 1 atau lebih)</label>
+                      <label className="block text-xs font-medium text-gray-500 mb-2">Kategori</label>
                       <div className="flex flex-wrap gap-2">
                         {(type === 'expense' ? expenseCategories : incomeCategories).map((cat) => (
-                          <button key={"label-" + cat} type="button" onClick={() => toggleCategory(cat)} className={"px-3 py-1.5 rounded-full text-xs font-medium transition-all border " + getLabelClass(cat)}>
+                          <button 
+                            key={"label-" + cat} 
+                            type="button" 
+                            onClick={() => toggleCategory(cat)} 
+                            className={"px-3 py-1.5 rounded-full text-xs font-medium transition-all border " + getLabelClass(cat)}
+                          >
                             {cat}
                           </button>
                         ))}
@@ -842,7 +915,6 @@ export default function App() {
     );
   };
 
-  // --- LAPORAN DENGAN FILTER MULTI & DUKUNGAN TRANSFER ADMIN FEE ---
   const filteredByPeriod = useMemo(() => {
     return transactions.filter(t => {
       const tDate = new Date(t.transactionDate || t.createdAt);
@@ -876,7 +948,6 @@ export default function App() {
         stats[primaryCat] = (stats[primaryCat] || 0) + parseFloat(t.amount); 
         totalExpense += parseFloat(t.amount); 
       } else if (t.type === 'transfer' && t.adminFee > 0) {
-        // Biaya admin masuk ke chart pengeluaran
         stats['Biaya Admin'] = (stats['Biaya Admin'] || 0) + parseFloat(t.adminFee);
         totalExpense += parseFloat(t.adminFee);
       }
@@ -886,7 +957,6 @@ export default function App() {
 
   const reportSummary = useMemo(() => {
     const inc = reportTransactions.filter(t => t.type === 'income').reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
-    // Pengeluaran murni + Biaya admin dari transfer
     const exp = reportTransactions.reduce((acc, curr) => {
         if(curr.type === 'expense') return acc + parseFloat(curr.amount);
         if(curr.type === 'transfer' && curr.adminFee > 0) return acc + parseFloat(curr.adminFee);
@@ -967,7 +1037,6 @@ export default function App() {
         )}
       </div>
       
-      {/* DAFTAR RINCIAN TRANSAKSI DI LAPORAN */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
         <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><List className="w-4 h-4 text-gray-500" /> Semua Riwayat ({reportCurrency})</h3>
         {reportTransactions.length === 0 ? <div className="text-center py-8 text-gray-400 text-sm">Tidak ada transaksi yang tercatat.</div> : (
@@ -977,7 +1046,6 @@ export default function App() {
               const isExpanded = expandedId === t.id;
               const hasItems = t.items && t.items.length > 0;
               
-              // Filter agar transfer biasa tidak penuhi list, KECUALI ada biaya admin
               if (isTransfer && (!t.adminFee || t.adminFee <= 0)) return null;
               
               return (
@@ -1006,12 +1074,11 @@ export default function App() {
                     </div>
                 </div>
                 
-                {/* Expandable Items in Report */}
                 {hasItems && !isTransfer && isExpanded && (
                     <div className="mt-3 bg-gray-50 rounded-lg p-3 text-xs animate-in fade-in">
                         <ul className="space-y-1.5">
                             {t.items.map((item, idx) => (
-                                <li key={"repdet-" + idx} className="flex justify-between border-b border-gray-200/50 pb-1 last:border-0 last:pb-0">
+                                <li key={"repdet-" + idx} className="flex justify-between border-b border-gray-200/50 pb-1.5 last:border-0 last:pb-0">
                                     <span className="text-gray-600">{item.name}</span>
                                     <span className="font-semibold text-gray-800">{formatCurrency(item.price || 0, t.currency)}</span>
                                 </li>
@@ -1029,8 +1096,6 @@ export default function App() {
 
   const downloadCSV = () => {
     if (transactions.length === 0) { setNotification({ type: 'error', message: 'Tidak ada data.' }); return; }
-    
-    // Update CSV Header
     const headers = "iso_date,tanggal_display,deskripsi,kategori,tipe,mata_uang,jumlah,dompet_asal,dompet_tujuan,biaya_admin,rincian_item";
     const csvRows = [headers];
     
@@ -1116,7 +1181,6 @@ export default function App() {
             let curr = 'IDR'; let amt = 0; 
             let wId = wallets[0]?.id || ''; let toWId = ''; let aFee = 0; let parsedItems = [];
 
-            // Baca CSV Versi 3 (Multi dompet + Items) atau versi lama
             if (cols.length >= 11) {
                 curr = clean(cols[5]); amt = parseFloat(clean(cols[6]));
                 wId = clean(cols[7]) || wId;
@@ -1174,6 +1238,81 @@ export default function App() {
     } finally { setLoading(false); setSyncStatus('synced'); }
   };
 
+  const confirmGenerateDummy = async () => {
+    if (!user) return;
+    setShowDummyModal(false); setLoading(true); setSyncStatus('saving');
+    try {
+      // 1. Siapkan dompet untuk simulasi (gunakan yang ada)
+      const w1 = wallets[0]?.id || '';
+      const w2 = wallets.length > 1 ? wallets[1].id : w1;
+      
+      // 2. Sesuaikan nominal berdasarkan mata uang (IDR vs JPY/Lainnya)
+      const isIDR = defaultCurrency === 'IDR';
+      const multiplier = isIDR ? 100 : 1; 
+      const baseSalary = isIDR ? 5000000 : 250000;
+      const curr = defaultCurrency;
+
+      const dummyData = [
+        { desc: 'Gaji Bulanan', amount: baseSalary, type: 'income', cats: ['Gaji'], dayOffset: 6, curr: curr, walletId: w1, items: [] },
+        { desc: 'Belanja Supermarket (TRIAL)', amount: 4500 * multiplier, type: 'expense', cats: ['Belanja', 'Makanan'], dayOffset: 3, curr: curr, walletId: w2, items: [
+            { name: 'Beras 5kg', price: 2000 * multiplier },
+            { name: 'Telur Ayam 1 Pack', price: 300 * multiplier },
+            { name: 'Susu Murni 1L', price: 200 * multiplier },
+            { name: 'Daging Ayam', price: 1000 * multiplier },
+            { name: 'Sayur & Buah', price: 1000 * multiplier }
+        ]},
+        { desc: 'Makan Siang (Matsuya/Warteg)', amount: 600 * multiplier, type: 'expense', cats: ['Makanan'], dayOffset: 1, curr: curr, walletId: w2, items: [] },
+        { desc: 'Top-up Kartu Transport', amount: 2000 * multiplier, type: 'expense', cats: ['Transportasi'], dayOffset: 2, curr: curr, walletId: w1, items: [] }
+      ];
+
+      // 3. Jika ada lebih dari 1 dompet, simulasikan transfer beda dompet (Tarik tunai)
+      if (wallets.length > 1) {
+          const dompetAsal = wallets[0];
+          const dompetTujuan = wallets[1];
+          dummyData.push({
+              desc: `Tarik Tunai ${dompetAsal.name} ➞ ${dompetTujuan.name}`,
+              amount: 10000 * multiplier,
+              type: 'transfer',
+              cats: [],
+              dayOffset: 4,
+              walletId: dompetAsal.id,
+              toWalletId: dompetTujuan.id,
+              adminFee: 20 * multiplier,
+              receivedAmount: 10000 * multiplier,
+              currency: dompetAsal.currency,
+              targetCurrency: dompetTujuan.currency,
+              items: []
+          });
+      }
+
+      const now = new Date();
+      for (const item of dummyData) {
+        const dateObj = new Date(now); dateObj.setDate(dateObj.getDate() - item.dayOffset);
+        
+        const tData = {
+          description: item.desc, amount: item.amount, type: item.type, 
+          categories: item.cats, category: item.cats[0] || 'Umum', currency: item.currency || item.curr,
+          walletId: item.walletId,
+          items: item.items,
+          date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+          transactionDate: dateObj.getTime(), createdAt: Date.now()
+        };
+
+        if (item.type === 'transfer') {
+            tData.toWalletId = item.toWalletId;
+            tData.adminFee = item.adminFee;
+            tData.receivedAmount = item.receivedAmount;
+            tData.targetCurrency = item.targetCurrency;
+        }
+
+        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), tData);
+      }
+      setNotification({ type: 'success', message: 'Data demo realistis ditambahkan.' });
+    } catch (error) {
+      setNotification({ type: 'error', message: 'Gagal membuat demo.' });
+    } finally { setLoading(false); setSyncStatus('synced'); }
+  };
+
   const renderSettingsView = () => (
     <div className="animate-in fade-in duration-300">
       <h2 className="text-2xl font-bold text-gray-900 mb-6">Pengaturan</h2>
@@ -1208,7 +1347,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* MANAJEMEN DOMPET */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
         <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Manajemen Dompet</h3>
@@ -1228,7 +1366,7 @@ export default function App() {
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-purple-100 p-5 mb-6 relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-4 opacity-10"><Sparkles className="w-16 h-16 text-purple-600" /></div>
+        <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none"><Sparkles className="w-16 h-16 text-purple-600" /></div>
         <h3 className="text-sm font-bold text-purple-600 uppercase tracking-wider mb-2 flex items-center gap-2"><Sparkles className="w-4 h-4" /> Fitur AI Scan Struk</h3>
         <p className="text-xs text-gray-500 mb-4 pr-10">Masukkan API Key dari Google Gemini untuk mengaktifkan fitur scan otomatis. Data ini aman dan hanya disimpan di HP Anda.</p>
         
@@ -1250,14 +1388,14 @@ export default function App() {
           <button onClick={() => { setType('expense'); setShowCatModal(true); }} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-rose-50 border border-gray-200 hover:border-rose-200 transition-all group">
             <div className="flex items-center gap-3">
               <div className="bg-rose-100 p-2 rounded-lg group-hover:bg-rose-200 transition-colors"><Tag className="w-5 h-5 text-rose-600" /></div>
-              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Label Pengeluaran</p><p className="text-xs text-gray-400">Atur pilihan label</p></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Label Pengeluaran</p><p className="text-xs text-gray-400">Atur pilihan label pengeluaran</p></div>
             </div>
             <ChevronRight className="w-4 h-4 text-gray-400" />
           </button>
           <button onClick={() => { setType('income'); setShowCatModal(true); }} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-200 hover:border-emerald-200 transition-all group">
             <div className="flex items-center gap-3">
               <div className="bg-emerald-100 p-2 rounded-lg group-hover:bg-emerald-200 transition-colors"><Tag className="w-5 h-5 text-emerald-600" /></div>
-              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Label Pemasukan</p><p className="text-xs text-gray-400">Atur pilihan label</p></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Label Pemasukan</p><p className="text-xs text-gray-400">Atur pilihan label pendapatan</p></div>
             </div>
             <ChevronRight className="w-4 h-4 text-gray-400" />
           </button>
@@ -1280,6 +1418,12 @@ export default function App() {
             </div>
           </button>
           <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv" className="hidden" />
+          <button onClick={() => setShowDummyModal(true)} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-purple-50 border border-gray-200 hover:border-purple-200 transition-all group">
+             <div className="flex items-center gap-3">
+              <div className="bg-purple-100 p-2 rounded-lg group-hover:bg-purple-200 transition-colors"><Sparkles className="w-5 h-5 text-purple-600" /></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Isi Data Demo</p><p className="text-xs text-gray-400">Buat transaksi contoh otomatis</p></div>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -1288,14 +1432,28 @@ export default function App() {
         <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data & Dompet</button>
       </div>
       
-      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v3.0.0 (Ultimate Edition)</div>
+      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v3.3.0 (Bulletproof Select)</div>
     </div>
   );
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-800 md:p-8 pb-24">
-      <div className="max-w-md mx-auto relative min-h-screen">
-        {renderHeader()}
+      <div className="max-w-md mx-auto relative min-h-screen shadow-xl md:rounded-[2rem] bg-gray-50 overflow-hidden">
+        
+        {view === 'home' && renderHeader()}
+        
+        {view !== 'home' && (
+            <div className="bg-gradient-to-b from-blue-700 to-indigo-800 px-5 py-4 text-white shadow-md relative overflow-hidden">
+                <div className="flex items-center justify-end relative z-10">
+                   <div className="flex items-center gap-2">
+                       {syncStatus === 'saving' && <RefreshCw className="w-4 h-4 text-blue-200 animate-spin" />}
+                       {syncStatus === 'synced' && <Cloud className="w-4 h-4 text-blue-200" />}
+                       {syncStatus === 'offline' && <CloudOff className="w-4 h-4 text-rose-300" />}
+                   </div>
+                </div>
+            </div>
+        )}
+        
         {loading && <div className="fixed inset-0 bg-white/80 z-50 flex items-center justify-center"><div className="flex flex-col items-center"><Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-2" /><p className="text-sm text-gray-500">Memuat data...</p></div></div>}
         
         {notification && (
@@ -1306,7 +1464,14 @@ export default function App() {
           </div>
         )}
 
-        {/* MODAL DOMPET BARU */}
+        {showDummyModal && (
+          <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4"><div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl"><div className="flex flex-col items-center text-center mb-6"><div className="bg-purple-100 p-3 rounded-full mb-4"><Sparkles className="w-8 h-8 text-purple-600" /></div><h3 className="font-bold text-xl text-gray-900">Isi Data Demo?</h3></div><div className="flex gap-3"><button onClick={() => setShowDummyModal(false)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition-colors">Batal</button><button onClick={confirmGenerateDummy} className="flex-1 py-3 rounded-xl bg-purple-600 text-white font-medium hover:bg-purple-700 transition-colors shadow-lg shadow-purple-200">Ya, Tambahkan</button></div></div></div>
+        )}
+
+        {showResetModal && (
+          <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4"><div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl"><div className="flex flex-col items-center text-center mb-6"><div className="bg-red-100 p-3 rounded-full mb-4"><AlertTriangle className="w-8 h-8 text-red-600" /></div><h3 className="font-bold text-xl text-gray-900">Hapus Semua Data?</h3></div><div className="flex gap-3"><button onClick={() => setShowResetModal(false)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition-colors">Batal</button><button onClick={handleResetData} className="flex-1 py-3 rounded-xl bg-red-600 text-white font-medium hover:bg-red-700 transition-colors shadow-lg shadow-red-200">Ya, Hapus</button></div></div></div>
+        )}
+
         {showWalletModal && (
           <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl">
@@ -1335,10 +1500,6 @@ export default function App() {
               </form>
             </div>
           </div>
-        )}
-
-        {showResetModal && (
-          <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4"><div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl"><div className="flex flex-col items-center text-center mb-6"><div className="bg-red-100 p-3 rounded-full mb-4"><AlertTriangle className="w-8 h-8 text-red-600" /></div><h3 className="font-bold text-xl text-gray-900">Hapus Semua Data?</h3><p className="text-xs text-gray-500 mt-2">Semua dompet dan riwayat transaksi akan musnah selamanya.</p></div><div className="flex gap-3"><button onClick={() => setShowResetModal(false)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition-colors">Batal</button><button onClick={handleResetData} className="flex-1 py-3 rounded-xl bg-red-600 text-white font-medium hover:bg-red-700 transition-colors shadow-lg shadow-red-200">Ya, Hapus</button></div></div></div>
         )}
 
         {showCatModal && (
@@ -1376,10 +1537,10 @@ export default function App() {
           </div>
         )}
 
-        <div className="p-4 md:px-0">
+        <div className="px-4 md:px-0">
           {view === 'home' && renderHomeView()}
-          {view === 'report' && renderReportView()}
-          {view === 'settings' && renderSettingsView()}
+          {view === 'report' && <div className="mt-4">{renderReportView()}</div>}
+          {view === 'settings' && <div className="mt-4">{renderSettingsView()}</div>}
         </div>
         
         {view === 'home' && showFloatingAdd && (
@@ -1398,4 +1559,4 @@ export default function App() {
       </div>
     </div>
   );
-            }
+                                               }
