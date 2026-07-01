@@ -71,6 +71,11 @@ export default function App() {
   const [showResetModal, setShowResetModal] = useState(false);
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [showDummyModal, setShowDummyModal] = useState(false); 
+  
+  // States Modal Kategori Per Item
+  const [showItemCatModal, setShowItemCatModal] = useState(false);
+  const [activeItemIndex, setActiveItemIndex] = useState(null);
+
   const [newCatName, setNewCatName] = useState('');
 
   const getCurrentDate = () => {
@@ -377,8 +382,9 @@ export default function App() {
             setCurrency(result.curr);
         }
         
+        // Inisiasi items dengan properti category yang kosong
         if (result.items && Array.isArray(result.items)) {
-            setItems(result.items.map(item => ({ name: item.n || 'Item', price: item.p || 0 })));
+            setItems(result.items.map(item => ({ name: item.n || 'Item', price: item.p || 0, category: '' })));
         } else { setItems([]); }
         
         setType('expense'); setEditId(null);
@@ -393,7 +399,8 @@ export default function App() {
     };
   };
 
-  const handleAddItem = () => setItems([...items, { name: '', price: '' }]);
+  const handleAddItem = () => setItems([...items, { name: '', price: '', category: '' }]);
+  
   const handleItemChange = (index, field, value) => {
       const newItems = [...items];
       newItems[index][field] = value;
@@ -404,12 +411,28 @@ export default function App() {
           setAmount(newTotal.toString());
       }
   };
+  
   const handleRemoveItem = (index) => {
       const newItems = items.filter((_, i) => i !== index);
       setItems(newItems);
       let newTotal = 0;
       newItems.forEach(item => { const p = parseFloat(item.price); if(!isNaN(p)) newTotal += p; });
       setAmount(newTotal.toString());
+  };
+
+  const handleOpenItemCatModal = (index) => {
+      setActiveItemIndex(index);
+      setShowItemCatModal(true);
+  };
+
+  const handleSelectItemCategory = (cat) => {
+      if (activeItemIndex !== null) {
+          const newItems = [...items];
+          newItems[activeItemIndex].category = cat;
+          setItems(newItems);
+      }
+      setShowItemCatModal(false);
+      setActiveItemIndex(null);
   };
 
   const handleSaveCategory = async (e) => {
@@ -768,10 +791,18 @@ export default function App() {
                         ) : (
                             <div className="space-y-2 mb-3">
                                 {items.map((item, index) => (
-                                    <div key={"item-" + index} className="flex items-center gap-2">
-                                        <input type="text" placeholder="Nama brg" value={item.name} onChange={(e) => handleItemChange(index, 'name', e.target.value)} className="flex-1 min-w-0 bg-white border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400" />
-                                        <input type="number" placeholder="Harga" value={item.price} onChange={(e) => handleItemChange(index, 'price', e.target.value)} className="w-20 text-right bg-white border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400" />
-                                        <button type="button" onClick={() => handleRemoveItem(index)} className="text-gray-300 hover:text-rose-500"><XCircle className="w-4 h-4" /></button>
+                                    <div key={"item-" + index} className="flex flex-col gap-2 p-2 bg-white rounded-lg border border-gray-100 mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <input type="text" placeholder="Nama brg" value={item.name} onChange={(e) => handleItemChange(index, 'name', e.target.value)} className="flex-1 min-w-0 bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400" />
+                                            <input type="number" placeholder="Harga" value={item.price} onChange={(e) => handleItemChange(index, 'price', e.target.value)} className="w-24 text-right bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400" />
+                                            <button type="button" onClick={() => handleRemoveItem(index)} className="text-gray-300 hover:text-rose-500"><XCircle className="w-5 h-5" /></button>
+                                        </div>
+                                        <div className="flex justify-start">
+                                            {/* Tombol Label Per Item yang Membuka Modal */}
+                                            <button type="button" onClick={() => handleOpenItemCatModal(index)} className={"text-[10px] px-2 py-1 rounded-md border flex items-center gap-1 transition-colors " + (item.category ? "bg-blue-50 border-blue-200 text-blue-700 font-bold" : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100")}>
+                                                <Tag className="w-3 h-3" /> {item.category || 'Pilih Label (Opsional)'}
+                                            </button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -784,12 +815,7 @@ export default function App() {
                     </div>
                     
                     <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Tanggal</label>
-                      <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:border-blue-500" />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-2">Kategori</label>
+                      <label className="block text-xs font-medium text-gray-500 mb-2">Kategori Utama (Struk)</label>
                       <div className="flex flex-wrap gap-2">
                         {(type === 'expense' ? expenseCategories : incomeCategories).map((cat) => (
                           <button 
@@ -881,15 +907,18 @@ export default function App() {
                             </div>
                         </div>
                         
-                        {/* Rincian Nota UI Dropdown */}
+                        {/* Rincian Nota UI Dropdown (Dilengkapi Label) */}
                         {hasItems && !isTransfer && isExpanded && (
                             <div className="bg-blue-50/30 border-t border-gray-100 p-4 animate-in slide-in-from-top-2">
                                 <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-2 flex items-center gap-1"><Receipt className="w-3 h-3" /> Rincian Item</p>
                                 <ul className="space-y-1.5">
                                     {t.items.map((item, idx) => (
-                                        <li key={"det-" + idx} className="flex justify-between text-xs border-b border-gray-200/50 pb-1.5 last:border-0 last:pb-0">
-                                            <span className="text-gray-700">{item.name}</span>
-                                            <span className="font-semibold text-gray-900">{formatCurrency(item.price || 0, t.currency)}</span>
+                                        <li key={"det-" + idx} className="flex justify-between items-start text-xs border-b border-gray-200/50 pb-1.5 last:border-0 last:pb-0">
+                                            <div className="flex flex-col">
+                                                <span className="text-gray-700 font-medium">{item.name}</span>
+                                                {item.category && <span className="text-[9px] text-gray-500 mt-0.5 flex items-center gap-0.5"><Tag className="w-2.5 h-2.5" /> {item.category}</span>}
+                                            </div>
+                                            <span className="font-semibold text-gray-900 mt-0.5">{formatCurrency(item.price || 0, t.currency)}</span>
                                         </li>
                                     ))}
                                 </ul>
@@ -948,19 +977,51 @@ export default function App() {
 
   const reportTransactions = useMemo(() => filteredByPeriod.filter(t => (t.currency || 'IDR') === reportCurrency), [filteredByPeriod, reportCurrency]);
 
+  // UPDATE BESAR: Perhitungan kategori sekarang mengekstrak data dari masing-masing item jika ada!
   const categoryStats = useMemo(() => {
     const stats = {}; let totalExpense = 0;
+    
     reportTransactions.forEach(t => {
       if (t.type === 'expense') { 
-        const primaryCat = (t.categories && t.categories.length > 0) ? t.categories[0] : (t.category || 'Umum');
-        stats[primaryCat] = (stats[primaryCat] || 0) + parseFloat(t.amount); 
-        totalExpense += parseFloat(t.amount); 
+        
+        // Cek apakah transaksi ini punya daftar item rincian
+        if (t.items && t.items.length > 0) {
+            let itemsTotal = 0;
+            
+            t.items.forEach(item => {
+                const itemPrice = parseFloat(item.price) || 0;
+                // Jika item punya kategori sendiri pakai itu, kalau tidak warisi dari kategori struk utama
+                const itemCat = item.category || (t.categories && t.categories.length > 0 ? t.categories[0] : (t.category || 'Umum'));
+                
+                stats[itemCat] = (stats[itemCat] || 0) + itemPrice;
+                totalExpense += itemPrice;
+                itemsTotal += itemPrice;
+            });
+            
+            // Logika Pintar: Jika total keseluruhan struk (amount) lebih besar dari hasil penjumlahan rincian item,
+            // Maka sisa selisih nominalnya akan dimasukkan ke kategori utama struk tersebut.
+            const diff = parseFloat(t.amount) - itemsTotal;
+            if (diff > 0) {
+                const primaryCat = (t.categories && t.categories.length > 0) ? t.categories[0] : (t.category || 'Umum');
+                stats[primaryCat] = (stats[primaryCat] || 0) + diff;
+                totalExpense += diff;
+            }
+        } else {
+            // Jika tidak ada item rincian, gunakan cara klasik (berdasarkan kategori utama)
+            const primaryCat = (t.categories && t.categories.length > 0) ? t.categories[0] : (t.category || 'Umum');
+            stats[primaryCat] = (stats[primaryCat] || 0) + parseFloat(t.amount); 
+            totalExpense += parseFloat(t.amount); 
+        }
+        
       } else if (t.type === 'transfer' && t.adminFee > 0) {
         stats['Biaya Admin'] = (stats['Biaya Admin'] || 0) + parseFloat(t.adminFee);
         totalExpense += parseFloat(t.adminFee);
       }
     });
-    return Object.keys(stats).map(cat => ({ name: cat, amount: stats[cat], percentage: totalExpense > 0 ? (stats[cat] / totalExpense) * 100 : 0 })).sort((a, b) => b.amount - a.amount);
+    
+    return Object.keys(stats)
+        .map(cat => ({ name: cat, amount: stats[cat], percentage: totalExpense > 0 ? (stats[cat] / totalExpense) * 100 : 0 }))
+        .sort((a, b) => b.amount - a.amount);
   }, [reportTransactions]);
 
   const reportSummary = useMemo(() => {
@@ -1087,8 +1148,11 @@ export default function App() {
                         <ul className="space-y-1.5">
                             {t.items.map((item, idx) => (
                                 <li key={"repdet-" + idx} className="flex justify-between border-b border-gray-200/50 pb-1.5 last:border-0 last:pb-0">
-                                    <span className="text-gray-600">{item.name}</span>
-                                    <span className="font-semibold text-gray-800">{formatCurrency(item.price || 0, t.currency)}</span>
+                                    <div className="flex flex-col">
+                                        <span className="text-gray-600 font-medium">{item.name}</span>
+                                        {item.category && <span className="text-[9px] text-gray-400 mt-0.5">{item.category}</span>}
+                                    </div>
+                                    <span className="font-semibold text-gray-800 mt-0.5">{formatCurrency(item.price || 0, t.currency)}</span>
                                 </li>
                             ))}
                         </ul>
@@ -1117,7 +1181,8 @@ export default function App() {
       if (t.items && t.items.length > 0) {
           itemsString = t.items.map(i => {
               const cleanName = (i.name || '').split('"').join('""');
-              return cleanName + "::" + (i.price || 0);
+              // Format penyimpanan CSV ditambahkan property category agar bisa direstore
+              return cleanName + "::" + (i.price || 0) + "::" + (i.category || '');
           }).join("||");
       }
       
@@ -1139,7 +1204,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', 'Backup_Dompetku_V3.csv');
+    link.setAttribute('download', 'Backup_Dompetku_V3_4.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1195,11 +1260,17 @@ export default function App() {
                 toWId = clean(cols[8]);
                 aFee = parseFloat(clean(cols[9]) || 0);
                 const itemsRaw = clean(cols[10]);
-                if (itemsRaw) parsedItems = itemsRaw.split('||').map(itemStr => { const parts = itemStr.split('::'); return { name: parts[0] || 'Item', price: parseFloat(parts[1]) || 0 }; });
+                if (itemsRaw) parsedItems = itemsRaw.split('||').map(itemStr => { 
+                    const parts = itemStr.split('::'); 
+                    return { name: parts[0] || 'Item', price: parseFloat(parts[1]) || 0, category: parts[2] || '' }; 
+                });
             } else if (cols.length >= 8) {
                 curr = clean(cols[5]); amt = parseFloat(clean(cols[6]));
                 const itemsRaw = clean(cols[7]);
-                if (itemsRaw) parsedItems = itemsRaw.split('||').map(itemStr => { const parts = itemStr.split('::'); return { name: parts[0] || 'Item', price: parseFloat(parts[1]) || 0 }; });
+                if (itemsRaw) parsedItems = itemsRaw.split('||').map(itemStr => { 
+                    const parts = itemStr.split('::'); 
+                    return { name: parts[0] || 'Item', price: parseFloat(parts[1]) || 0, category: parts[2] || '' }; 
+                });
             } else if (cols.length === 7) { curr = clean(cols[5]); amt = parseFloat(clean(cols[6])); } 
             else { amt = parseFloat(clean(cols[5])); }
             
@@ -1263,11 +1334,11 @@ export default function App() {
       const dummyData = [
         { desc: 'Gaji Bulanan', amount: baseSalary, type: 'income', cats: ['Gaji'], dayOffset: 6, curr: curr, walletId: w1, items: [] },
         { desc: 'Belanja Supermarket (TRIAL)', amount: 4500 * multiplier, type: 'expense', cats: ['Belanja', 'Makanan'], dayOffset: 3, curr: curr, walletId: w2, items: [
-            { name: 'Beras 5kg', price: 2000 * multiplier },
-            { name: 'Telur Ayam 1 Pack', price: 300 * multiplier },
-            { name: 'Susu Murni 1L', price: 200 * multiplier },
-            { name: 'Daging Ayam', price: 1000 * multiplier },
-            { name: 'Sayur & Buah', price: 1000 * multiplier }
+            { name: 'Beras 5kg', price: 2000 * multiplier, category: 'Makanan' },
+            { name: 'Telur Ayam 1 Pack', price: 300 * multiplier, category: 'Makanan' },
+            { name: 'Susu Murni 1L', price: 200 * multiplier, category: 'Makanan' },
+            { name: 'Daging Ayam', price: 1000 * multiplier, category: 'Makanan' },
+            { name: 'Sabun & Odol', price: 1000 * multiplier, category: 'Belanja' }
         ]},
         { desc: 'Makan Siang (Matsuya/Warteg)', amount: 600 * multiplier, type: 'expense', cats: ['Makanan'], dayOffset: 1, curr: curr, walletId: w2, items: [] },
         { desc: 'Top-up Kartu Transport', amount: 2000 * multiplier, type: 'expense', cats: ['Transportasi'], dayOffset: 2, curr: curr, walletId: w1, items: [] }
@@ -1440,7 +1511,7 @@ export default function App() {
         <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data & Dompet</button>
       </div>
       
-      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v3.3.0 (Bulletproof Select)</div>
+      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v3.4.0 (Item Level Labeling)</div>
     </div>
   );
 
@@ -1468,6 +1539,34 @@ export default function App() {
           <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-4 duration-300 w-full max-w-sm px-4">
             <div className={"flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border " + (notification.type === 'success' ? "bg-emerald-50 border-emerald-100 text-emerald-800" : "bg-rose-50 border-rose-100 text-rose-800")}>
               {notification.type === 'success' ? <CheckCircle className="w-5 h-5 flex-shrink-0" /> : <XCircle className="w-5 h-5 flex-shrink-0" />}<span className="text-sm font-medium">{notification.message}</span>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL PILIH LABEL UNTUK ITEM */}
+        {showItemCatModal && (
+          <div className="fixed inset-0 bg-black/40 z-[80] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl max-h-[80vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-lg">Pilih Kategori Item</h3>
+                <button onClick={() => { setShowItemCatModal(false); setActiveItemIndex(null); }}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
+              </div>
+              <div className="space-y-2">
+                  {(type === 'expense' ? expenseCategories : incomeCategories).map(cat => (
+                      <button
+                          key={"item-cat-" + cat}
+                          onClick={() => handleSelectItemCategory(cat)}
+                          className="w-full text-left p-3 rounded-xl border border-gray-100 hover:bg-blue-50 hover:border-blue-200 transition-colors text-sm font-medium text-gray-700"
+                      >
+                          {cat}
+                      </button>
+                  ))}
+                  <div className="pt-2">
+                      <button onClick={() => handleSelectItemCategory('')} className="w-full text-left p-3 rounded-xl bg-gray-50 border border-gray-100 hover:bg-gray-100 transition-colors text-xs font-medium text-gray-500 italic">
+                          Hapus Label (Ikut Kategori Struk)
+                      </button>
+                  </div>
+              </div>
             </div>
           </div>
         )}
@@ -1567,4 +1666,4 @@ export default function App() {
       </div>
     </div>
   );
-      }
+}
