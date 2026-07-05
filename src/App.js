@@ -100,12 +100,12 @@ export default function App() {
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState(defaultCurrency); 
   const [date, setDate] = useState(getCurrentDate());
-  const [selectedCategories, setSelectedCategories] = useState(['Makanan']);
+  const [selectedCategories, setSelectedCategories] = useState([]); // Default dikosongkan
   const [items, setItems] = useState([]); 
   const [receiptImageUrl, setReceiptImageUrl] = useState(null); // URL gambar struk di form
   
   // States Khusus Dompet & Transfer
-  const [walletId, setWalletId] = useState('');
+  const [walletId, setWalletId] = useState(''); // Default dikosongkan
   const [toWalletId, setToWalletId] = useState('');
   const [receivedAmount, setReceivedAmount] = useState('');
   const [adminFee, setAdminFee] = useState('');
@@ -143,19 +143,17 @@ export default function App() {
 
   useEffect(() => {
     if(!editId && type !== 'transfer') {
-       setSelectedCategories([type === 'expense' ? 'Makanan' : 'Gaji']);
+       setSelectedCategories([]); // Jangan pilih otomatis saat ganti tab
     }
   }, [type, editId]);
 
   useEffect(() => {
-      if(wallets.length > 0 && !walletId && !editId) {
-          setWalletId(wallets[0].id);
-          setCurrency(wallets[0].currency);
+      // Sinkronisasi mata uang saja jika dompet dipilih, HAPUS logika auto-select dompet
+      if(walletId) {
+          const w = wallets.find(w => w.id === walletId);
+          if (w) setCurrency(w.currency);
       }
-      if(wallets.length > 1 && !toWalletId && !editId && type === 'transfer') {
-          setToWalletId(wallets[1].id);
-      }
-  }, [wallets, walletId, toWalletId, editId, type]);
+  }, [wallets, walletId]);
 
   useEffect(() => {
     if (notification) {
@@ -532,7 +530,14 @@ export default function App() {
 
   const handleAddTransaction = async (e) => {
     e.preventDefault();
-    if (!amount || !date || !user || !walletId) return;
+    
+    // Validasi Wajib
+    if (!walletId) {
+        setNotification({ type: 'error', message: 'Pilih Sumber Dana (Dompet) terlebih dahulu!' }); return;
+    }
+    if (!amount || !date || !user) {
+        setNotification({ type: 'error', message: 'Jumlah dan Tanggal wajib diisi!' }); return;
+    }
     
     if (type === 'transfer') {
         if(!toWalletId || walletId === toWalletId) {
@@ -541,6 +546,9 @@ export default function App() {
     } else {
         if(!description) {
             setNotification({ type: 'error', message: 'Deskripsi tidak boleh kosong!' }); return;
+        }
+        if(selectedCategories.length === 0) {
+            setNotification({ type: 'error', message: 'Pilih minimal 1 Kategori Utama!' }); return;
         }
     }
 
@@ -590,10 +598,12 @@ export default function App() {
         setNotification({ type: 'success', message: 'Tersimpan.' });
       }
       
+      // Reset form ke kosong
       setHomeViewDate(selectedDate); setDescription(''); setAmount(''); setDate(getCurrentDate()); setItems([]);
       setReceivedAmount(''); setAdminFee(''); setReceiptImageUrl(null);
-      const currentList = type === 'expense' ? expenseCategories : incomeCategories;
-      setSelectedCategories([currentList[0]]);
+      setSelectedCategories([]);
+      setWalletId('');
+      setToWalletId('');
     } catch (error) {
       setNotification({ type: 'error', message: editId ? 'Gagal memperbarui.' : 'Gagal menyimpan.' });
       setSyncStatus('offline');
@@ -619,7 +629,6 @@ export default function App() {
         let cats = [];
         if (t.categories && Array.isArray(t.categories) && t.categories.length > 0) cats = t.categories;
         else if (t.category) cats = [t.category];
-        else cats = [t.type === 'expense' ? expenseCategories[0] : incomeCategories[0]];
         setSelectedCategories(cats); 
     }
     
@@ -631,7 +640,9 @@ export default function App() {
   const cancelEdit = () => {
     setEditId(null); setDescription(''); setAmount(''); setDate(getCurrentDate()); setItems([]);
     setReceivedAmount(''); setAdminFee(''); setReceiptImageUrl(null);
-    setSelectedCategories([type === 'expense' ? expenseCategories[0] : incomeCategories[0]]);
+    setSelectedCategories([]);
+    setWalletId('');
+    setToWalletId('');
   };
 
   const handleDelete = async (id) => {
@@ -786,6 +797,7 @@ export default function App() {
                           <label className="block text-[10px] font-bold text-gray-500 mb-1">DARI DOMPET (Asal)</label>
                           <div className="relative">
                               <select value={walletId} onChange={(e) => setWalletId(e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 appearance-none text-xs font-bold">
+                                <option value="" disabled>-- Pilih Dompet --</option>
                                 {wallets.map(w => <option key={"s-"+w.id} value={w.id}>{w.name} ({w.currency})</option>)}
                               </select>
                               <ChevronDown className="absolute right-2 top-2.5 w-3 h-3 text-gray-400 pointer-events-none" />
@@ -827,14 +839,21 @@ export default function App() {
                 </div>
             ) : (
                 <>
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><CreditCard className="w-3.5 h-3.5" /> Dompet Sumber</label>
-                      <div className="relative">
-                          <select value={walletId} onChange={(e) => setWalletId(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-blue-500 appearance-none text-sm font-bold text-blue-700">
-                            {wallets.map(w => <option key={"s-"+w.id} value={w.id}>{w.name} ({w.currency})</option>)}
-                          </select>
-                          <ChevronDown className="absolute right-3 top-3 w-4 h-4 text-gray-400 pointer-events-none" />
-                      </div>
+                    <div className="grid grid-cols-2 gap-3 mb-1">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><CreditCard className="w-3.5 h-3.5" /> Sumber Dana</label>
+                          <div className="relative">
+                              <select value={walletId} onChange={(e) => setWalletId(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 appearance-none text-xs font-bold text-blue-700">
+                                <option value="" disabled>-- Pilih --</option>
+                                {wallets.map(w => <option key={"s-"+w.id} value={w.id}>{w.name}</option>)}
+                              </select>
+                              <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> Tanggal</label>
+                          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-500 text-xs font-bold text-gray-700" />
+                        </div>
                     </div>
                 
                     <div>
@@ -1760,4 +1779,4 @@ export default function App() {
       </div>
     </div>
   );
-}
+      }
