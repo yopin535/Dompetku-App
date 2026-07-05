@@ -122,6 +122,10 @@ export default function App() {
   const [reportType, setReportType] = useState('monthly'); 
   const [reportCurrency, setReportCurrency] = useState(defaultCurrency); 
   
+  // NEW: State untuk Accordion di Laporan dan Warna Grafik
+  const [expandedCategory, setExpandedCategory] = useState(null);
+  const CHART_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#f43f5e', '#14b8a6', '#84cc16'];
+  
   const fileInputRef = useRef(null);
   const receiptInputRef = useRef(null);
   const [isScanning, setIsScanning] = useState(false);
@@ -1117,6 +1121,65 @@ export default function App() {
     return { income: inc, expense: exp, balance: inc - exp };
   }, [reportTransactions]);
 
+  // NEW: Mengelompokkan transaksi per kategori untuk Akordeon Laporan
+  const transactionsByCategory = useMemo(() => {
+    const grouped = {};
+    reportTransactions.forEach(t => {
+        if (t.type === 'expense') {
+            if (t.items && t.items.length > 0) {
+                let itemsTotal = 0;
+                t.items.forEach(item => {
+                    const itemPrice = parseFloat(item.price) || 0;
+                    const itemCat = item.category || (t.categories && t.categories.length > 0 ? t.categories[0] : (t.category || 'Umum'));
+                    if (!grouped[itemCat]) grouped[itemCat] = [];
+                    grouped[itemCat].push({ name: item.name, price: itemPrice, isItem: true, date: t.date, parentDesc: t.description });
+                    itemsTotal += itemPrice;
+                });
+                const diff = parseFloat(t.amount) - itemsTotal;
+                if (diff > 0) {
+                    const primaryCat = (t.categories && t.categories.length > 0) ? t.categories[0] : (t.category || 'Umum');
+                    if (!grouped[primaryCat]) grouped[primaryCat] = [];
+                    grouped[primaryCat].push({ name: 'Lainnya (Struk Utama)', price: diff, isItem: false, date: t.date });
+                }
+            } else {
+                const primaryCat = (t.categories && t.categories.length > 0) ? t.categories[0] : (t.category || 'Umum');
+                if (!grouped[primaryCat]) grouped[primaryCat] = [];
+                grouped[primaryCat].push({ name: t.description, price: parseFloat(t.amount), isItem: false, date: t.date });
+            }
+        } else if (t.type === 'transfer' && t.adminFee > 0) {
+            if (!grouped['Biaya Admin']) grouped['Biaya Admin'] = [];
+            grouped['Biaya Admin'].push({ name: 'Biaya Admin Transfer', price: parseFloat(t.adminFee), isItem: false, date: t.date });
+        }
+    });
+    return grouped;
+  }, [reportTransactions]);
+
+  const incomeTransactions = useMemo(() => reportTransactions.filter(t => t.type === 'income'), [reportTransactions]);
+
+  const getInsight = () => {
+    if (categoryStats.length === 0 && incomeTransactions.length === 0) return "Belum ada aktivitas di periode ini. Yuk mulai catat keuanganmu!";
+    if (reportSummary.expense > reportSummary.income && reportSummary.income > 0) return "⚠️ Pengeluaranmu melebihi pemasukan bulan ini. Hati-hati overbudget!";
+    if (categoryStats.length > 0) {
+        const topExpense = categoryStats[0];
+        if (topExpense.percentage > 50) return `💡 Hati-hati, lebih dari setengah uangmu habis untuk ${topExpense.name} (${Math.round(topExpense.percentage)}%).`;
+        return `💡 Pengeluaran terbesarmu saat ini ada di kategori ${topExpense.name} (${Math.round(topExpense.percentage)}%).`;
+    }
+    if (reportSummary.income > reportSummary.expense) return "🎉 Keren! Pemasukanmu lebih besar dari pengeluaran. Jangan lupa ditabung ya!";
+    return "Terus catat pengeluaranmu agar keuangan tetap sehat.";
+  };
+
+  const generateConicGradient = () => {
+    let currentAngle = 0;
+    const gradients = categoryStats.map((cat, i) => {
+        const angle = (cat.percentage / 100) * 360;
+        const color = CHART_COLORS[i % CHART_COLORS.length];
+        const str = `${color} ${currentAngle}deg ${currentAngle + angle}deg`;
+        currentAngle += angle;
+        return str;
+    });
+    return `conic-gradient(${gradients.join(', ')})`;
+  };
+
   const changeReportPeriod = (increment) => {
     const newDate = new Date(reportDate);
     if (reportType === 'yearly') newDate.setFullYear(newDate.getFullYear() + increment);
@@ -1141,114 +1204,172 @@ export default function App() {
   };
 
   const renderReportView = () => (
-    <div className="animate-in fade-in duration-300">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
-        
-        <div className="flex bg-gray-100 p-1 rounded-lg mb-6 gap-1">
-          <button onClick={() => setReportType('daily')} className={"flex-1 py-1.5 text-[10px] md:text-xs font-bold rounded-md transition-all " + (reportType === 'daily' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>Harian</button>
-          <button onClick={() => setReportType('weekly')} className={"flex-1 py-1.5 text-[10px] md:text-xs font-bold rounded-md transition-all " + (reportType === 'weekly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>Mingguan</button>
-          <button onClick={() => setReportType('monthly')} className={"flex-1 py-1.5 text-[10px] md:text-xs font-bold rounded-md transition-all " + (reportType === 'monthly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>Bulanan</button>
-          <button onClick={() => setReportType('yearly')} className={"flex-1 py-1.5 text-[10px] md:text-xs font-bold rounded-md transition-all " + (reportType === 'yearly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700")}>Tahunan</button>
-        </div>
-        
-        <div className="flex justify-center mb-4">
-          <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
-            <span className="text-xs text-gray-500">Mata Uang Laporan:</span>
-            <select value={reportCurrency} onChange={(e) => setReportCurrency(e.target.value)} className="bg-transparent text-sm font-bold text-blue-600 focus:outline-none">
-              {[...new Set(transactions.map(t => t.currency || defaultCurrency))].map(c => <option key={c} value={c}>{c}</option>)}
-              {transactions.length === 0 && <option value={defaultCurrency}>{defaultCurrency}</option>}
-            </select>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between mb-4">
-          <button onClick={() => changeReportPeriod(-1)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
-          <div className="text-center"><h2 className="font-bold text-gray-900 text-[15px]">{getReportTitle()}</h2></div>
-          <button onClick={() => changeReportPeriod(1)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ChevronRight className="w-5 h-5 text-gray-600" /></button>
-        </div>
-        
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100"><p className="text-xs text-emerald-600 mb-1">Total Pemasukan</p><p className="font-bold text-emerald-700">{formatCurrency(reportSummary.income, reportCurrency)}</p></div>
-          <div className="bg-rose-50 p-3 rounded-xl border border-rose-100"><p className="text-xs text-rose-600 mb-1">Total Pengeluaran</p><p className="font-bold text-rose-700">{formatCurrency(reportSummary.expense, reportCurrency)}</p></div>
-        </div>
-        <div className={"text-center p-4 rounded-xl border mb-8 " + (reportSummary.balance >= 0 ? "bg-blue-50 border-blue-100" : "bg-orange-50 border-orange-100")}>
-          <p className="text-xs text-gray-500 mb-1">Arus Kas Bersih (Net Cashflow)</p>
-          <p className={"text-2xl font-bold " + (reportSummary.balance >= 0 ? "text-blue-700" : "text-orange-700")}>{reportSummary.balance >= 0 ? "+" : ""}{formatCurrency(reportSummary.balance, reportCurrency)}</p>
-        </div>
-        
-        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><PieChart className="w-4 h-4 text-gray-500" /> Distribusi Pengeluaran</h3>
-        {categoryStats.length === 0 ? <div className="text-center py-8 text-gray-400 text-sm">Belum ada pengeluaran.</div> : (
-          <div className="space-y-4">
-            {categoryStats.map((cat) => (
-              <div key={cat.name}>
-                <div className="flex justify-between text-sm mb-1"><span className="text-gray-700 font-medium">{cat.name}</span><div className="text-right"><span className="text-gray-900 font-bold">{formatCurrency(cat.amount, reportCurrency)}</span><span className="text-xs text-gray-500 ml-1">({Math.round(cat.percentage)}%)</span></div></div>
-                <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden"><div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style={{ width: String(cat.percentage) + "%" }}></div></div>
-              </div>
-            ))}
-          </div>
-        )}
+    <div className="animate-in fade-in duration-300 pb-4">
+      
+      {/* Filter Waktu Model Pill */}
+      <div className="flex bg-gray-200/60 p-1.5 rounded-full mb-6 gap-1 shadow-inner border border-gray-200/50">
+        <button onClick={() => setReportType('daily')} className={`flex-1 py-2 text-[10px] md:text-xs font-bold rounded-full transition-all duration-300 ${reportType === 'daily' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>Harian</button>
+        <button onClick={() => setReportType('weekly')} className={`flex-1 py-2 text-[10px] md:text-xs font-bold rounded-full transition-all duration-300 ${reportType === 'weekly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>Mingguan</button>
+        <button onClick={() => setReportType('monthly')} className={`flex-1 py-2 text-[10px] md:text-xs font-bold rounded-full transition-all duration-300 ${reportType === 'monthly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>Bulanan</button>
+        <button onClick={() => setReportType('yearly')} className={`flex-1 py-2 text-[10px] md:text-xs font-bold rounded-full transition-all duration-300 ${reportType === 'yearly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>Tahunan</button>
       </div>
       
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
-        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><List className="w-4 h-4 text-gray-500" /> Semua Riwayat ({reportCurrency})</h3>
-        {reportTransactions.length === 0 ? <div className="text-center py-8 text-gray-400 text-sm">Tidak ada transaksi yang tercatat.</div> : (
-          <div className="space-y-3">
-            {[...reportTransactions].sort((a, b) => new Date(b.transactionDate || b.createdAt) - new Date(a.transactionDate || a.createdAt)).map((t) => {
-              const isTransfer = t.type === 'transfer';
-              const isExpanded = expandedId === t.id;
-              const hasItems = t.items && t.items.length > 0;
-              
-              if (isTransfer && (!t.adminFee || t.adminFee <= 0)) return null;
-              
-              return (
-              <div key={"rep"+t.id} className="py-2 border-b border-gray-50 last:border-0 group cursor-pointer" onClick={() => hasItems && toggleExpand(t.id)}>
-                <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-3 w-2/3">
-                       <div className={"w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 " + (isTransfer ? "bg-blue-50 text-blue-600" : (t.type === 'income' ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"))}>
-                         {isTransfer ? <ArrowRightLeft className="w-4 h-4" /> : (t.type === 'income' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />)}
-                       </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-gray-800 truncate">{isTransfer ? "Biaya Admin Transfer" : t.description}</p>
-                          <div className="flex flex-wrap items-center gap-1 mt-0.5">
-                            <span className="text-[9px] text-gray-400">{t.date}</span>
-                            {!isTransfer && (t.categories || (t.category ? [t.category] : ['Umum'])).map(catLabel => (
-                               <span key={"rep-cat-" + catLabel} className="text-[8px] bg-gray-100 text-gray-600 px-1 py-0.5 rounded font-medium">{catLabel}</span>
-                            ))}
-                            {hasItems && <span className="text-[8px] bg-blue-50 text-blue-600 px-1 py-0.5 rounded font-bold ml-1">Lihat Nota</span>}
-                          </div>
-                        </div>
-                    </div>
-                    <div className="text-right flex-shrink-0 ml-2">
-                        <p className={"text-sm font-bold " + (isTransfer ? "text-rose-600" : (t.type === 'income' ? "text-emerald-600" : "text-rose-600"))}>
-                            {isTransfer ? "-" : (t.type === 'income' ? "+" : "-")}
-                            {formatCurrency(isTransfer ? t.adminFee : t.amount, t.currency)}
-                        </p>
-                    </div>
-                </div>
-                
-                {hasItems && !isTransfer && isExpanded && (
-                    <div className="mt-3 bg-gray-50 rounded-lg p-3 text-xs animate-in fade-in">
-                        {t.receiptUrl && (
-                            <button onClick={(e) => { e.stopPropagation(); setPreviewImage(t.receiptUrl); }} className="w-full mb-3 text-[10px] font-bold text-purple-600 bg-purple-100 px-2 py-1.5 rounded border border-purple-200 flex items-center justify-center gap-1 hover:bg-purple-200"><ImageIcon className="w-3.5 h-3.5"/> Lihat Foto Struk</button>
-                        )}
-                        <ul className="space-y-1.5">
-                            {t.items.map((item, idx) => (
-                                <li key={"repdet-" + idx} className="flex justify-between border-b border-gray-200/50 pb-1.5 last:border-0 last:pb-0">
-                                    <div className="flex flex-col">
-                                        <span className="text-gray-600 font-medium">{item.name}</span>
-                                        {item.category && <span className="text-[9px] text-gray-400 mt-0.5">{item.category}</span>}
-                                    </div>
-                                    <span className="font-semibold text-gray-800 mt-0.5">{formatCurrency(item.price || 0, t.currency)}</span>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
-              </div>
-            )})}
-          </div>
-        )}
+      {/* Pilih Mata Uang */}
+      <div className="flex justify-center mb-5">
+        <div className="flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-xl border border-gray-200 shadow-sm">
+          <span className="text-xs font-medium text-gray-500">Mata Uang:</span>
+          <select value={reportCurrency} onChange={(e) => setReportCurrency(e.target.value)} className="bg-transparent text-sm font-bold text-indigo-600 focus:outline-none cursor-pointer">
+            {[...new Set(transactions.map(t => t.currency || defaultCurrency))].map(c => <option key={c} value={c}>{c}</option>)}
+            {transactions.length === 0 && <option value={defaultCurrency}>{defaultCurrency}</option>}
+          </select>
+        </div>
       </div>
+
+      {/* Navigasi Tanggal */}
+      <div className="flex items-center justify-between mb-6 px-2">
+        <button onClick={() => changeReportPeriod(-1)} className="p-2.5 hover:bg-gray-100 rounded-full transition-colors bg-white shadow-sm border border-gray-100"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
+        <div className="text-center"><h2 className="font-bold text-gray-900 text-base">{getReportTitle()}</h2></div>
+        <button onClick={() => changeReportPeriod(1)} className="p-2.5 hover:bg-gray-100 rounded-full transition-colors bg-white shadow-sm border border-gray-100"><ChevronRight className="w-5 h-5 text-gray-600" /></button>
+      </div>
+      
+      {/* Health Card Premium */}
+      <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-[2rem] p-6 shadow-xl shadow-indigo-200 mb-8 text-white relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none"><Sparkles className="w-32 h-32" /></div>
+          
+          <div className="relative z-10 text-center mb-6">
+              <p className="text-indigo-100 text-[11px] font-bold uppercase tracking-wider mb-1">Arus Kas Bersih (Sisa Uang)</p>
+              <p className="text-4xl font-extrabold tracking-tight">
+                 {reportSummary.balance >= 0 ? "+" : ""}{formatCurrency(reportSummary.balance, reportCurrency)}
+              </p>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4 relative z-10">
+              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 flex flex-col items-center text-center">
+                  <div className="bg-emerald-400/20 p-1.5 rounded-full mb-2"><TrendingUp className="w-4 h-4 text-emerald-300"/></div>
+                  <p className="text-[10px] text-indigo-100 mb-0.5">Pemasukan</p>
+                  <p className="font-bold text-[13px]">{formatCurrency(reportSummary.income, reportCurrency)}</p>
+              </div>
+              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 flex flex-col items-center text-center">
+                  <div className="bg-rose-400/20 p-1.5 rounded-full mb-2"><TrendingDown className="w-4 h-4 text-rose-300"/></div>
+                  <p className="text-[10px] text-indigo-100 mb-0.5">Pengeluaran</p>
+                  <p className="font-bold text-[13px]">{formatCurrency(reportSummary.expense, reportCurrency)}</p>
+              </div>
+          </div>
+      </div>
+      
+      {/* Grafik Donat & Insight */}
+      <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 p-6 mb-6 relative overflow-hidden">
+         <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><PieChart className="w-5 h-5 text-purple-500" /> Distribusi Pengeluaran</h3>
+         
+         {categoryStats.length === 0 ? (
+             <div className="text-center py-10 text-gray-400 text-sm bg-gray-50 rounded-2xl border border-dashed border-gray-200">Belum ada pengeluaran yang dicatat.</div>
+         ) : (
+             <div className="flex flex-col items-center">
+                 {/* CSS Based Donut Chart (Super Ringan) */}
+                 <div className="relative w-48 h-48 mb-6 drop-shadow-md transition-all duration-500">
+                     <div className="w-full h-full rounded-full" style={{ background: generateConicGradient() }}></div>
+                     {/* Lubang Tengah Donat */}
+                     <div className="absolute inset-0 m-auto w-[120px] h-[120px] bg-white rounded-full flex flex-col items-center justify-center shadow-inner">
+                         <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total</span>
+                         <span className="text-sm font-black text-gray-900 mt-0.5">{formatCurrency(reportSummary.expense, reportCurrency)}</span>
+                     </div>
+                 </div>
+                 
+                 {/* Legenda Kategori */}
+                 <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 w-full border-t border-gray-50 pt-5">
+                     {categoryStats.map((cat, i) => (
+                         <div key={cat.name} className="flex items-center gap-1.5">
+                             <div className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}></div>
+                             <span className="text-[11px] font-semibold text-gray-600">{cat.name} <span className="text-gray-400 font-normal">({Math.round(cat.percentage)}%)</span></span>
+                         </div>
+                     ))}
+                 </div>
+             </div>
+         )}
+
+         {/* Banner AI Insight */}
+         <div className="mt-6 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-100/50 p-4 rounded-2xl flex gap-3 shadow-sm">
+             <div className="bg-white p-2 rounded-full h-fit flex-shrink-0 shadow-sm border border-purple-100"><Sparkles className="w-4 h-4 text-purple-600" /></div>
+             <p className="text-xs text-indigo-900/80 leading-relaxed font-semibold self-center">{getInsight()}</p>
+         </div>
+      </div>
+
+      {/* Rincian per Kategori (Accordion) */}
+      <div className="mb-6">
+         <h3 className="font-bold text-gray-800 mb-4 px-1 flex items-center gap-2"><List className="w-5 h-5 text-gray-500" /> Rincian per Kategori</h3>
+         {categoryStats.length === 0 ? (
+             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center text-gray-400 text-sm">Tidak ada rincian.</div>
+         ) : (
+             <div className="space-y-3">
+                 {categoryStats.map((cat, i) => {
+                     const isExpanded = expandedCategory === cat.name;
+                     const items = transactionsByCategory[cat.name] || [];
+                     const color = CHART_COLORS[i % CHART_COLORS.length];
+                     
+                     return (
+                         <div key={cat.name} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden transition-all duration-300">
+                             <div 
+                               onClick={() => setExpandedCategory(isExpanded ? null : cat.name)}
+                               className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50"
+                             >
+                                 <div className="flex items-center gap-3">
+                                     <div className="w-2.5 h-10 rounded-full" style={{ backgroundColor: color }}></div>
+                                     <div>
+                                         <h4 className="font-bold text-gray-800 text-sm">{cat.name}</h4>
+                                         <p className="text-[10px] text-gray-400 font-medium mt-0.5">{items.length} item transaksi</p>
+                                     </div>
+                                 </div>
+                                 <div className="flex items-center gap-3">
+                                     <span className="font-bold text-gray-900 text-sm">{formatCurrency(cat.amount, reportCurrency)}</span>
+                                     <div className={`p-1.5 rounded-full transition-colors ${isExpanded ? 'bg-gray-200' : 'bg-gray-100'}`}>
+                                        {isExpanded ? <ChevronUp className="w-3 h-3 text-gray-600"/> : <ChevronDown className="w-3 h-3 text-gray-600"/>}
+                                     </div>
+                                 </div>
+                             </div>
+                             
+                             {isExpanded && (
+                                 <div className="bg-gray-50/50 px-4 pb-4 pt-2 border-t border-gray-100 animate-in slide-in-from-top-2 duration-300">
+                                     <ul className="space-y-2 mt-2">
+                                         {items.map((item, idx) => (
+                                             <li key={idx} className="flex justify-between items-start border-b border-gray-200/50 pb-2 last:border-0 last:pb-0">
+                                                 <div className="flex flex-col pr-4">
+                                                     <span className="text-xs font-semibold text-gray-700">{item.name}</span>
+                                                     <span className="text-[9px] text-gray-400 mt-1 font-medium">{item.date} {item.isItem ? `• Struk: ${item.parentDesc}` : ''}</span>
+                                                 </div>
+                                                 <span className="text-xs font-bold text-gray-800 flex-shrink-0">{formatCurrency(item.price, reportCurrency)}</span>
+                                             </li>
+                                         ))}
+                                     </ul>
+                                 </div>
+                             )}
+                         </div>
+                     );
+                 })}
+             </div>
+         )}
+      </div>
+
+      {/* Riwayat Pemasukan */}
+      {incomeTransactions.length > 0 && (
+          <div className="mb-8">
+             <h3 className="font-bold text-gray-800 mb-4 px-1 flex items-center gap-2"><TrendingUp className="w-5 h-5 text-emerald-500" /> Riwayat Pemasukan</h3>
+             <div className="space-y-3">
+                 {incomeTransactions.map(t => (
+                     <div key={"inc-"+t.id} className="bg-white rounded-2xl shadow-sm border border-emerald-100 p-4 flex justify-between items-center">
+                         <div className="flex items-center gap-3">
+                             <div className="bg-emerald-100 p-2 rounded-full text-emerald-600"><TrendingUp className="w-4 h-4"/></div>
+                             <div>
+                                 <p className="font-bold text-gray-800 text-sm">{t.description}</p>
+                                 <p className="text-[10px] text-gray-400 font-medium mt-0.5">{t.date} • {t.category || t.categories?.[0]}</p>
+                             </div>
+                         </div>
+                         <span className="font-bold text-emerald-600 text-sm">+{formatCurrency(t.amount, t.currency)}</span>
+                     </div>
+                 ))}
+             </div>
+          </div>
+      )}
+
     </div>
   );
 
@@ -1779,4 +1900,4 @@ export default function App() {
       </div>
     </div>
   );
-      }
+                                                                                     }
