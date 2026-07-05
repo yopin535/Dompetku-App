@@ -4,7 +4,7 @@ import {
   Cloud, Loader2, Tag, Calendar, PieChart, List, ChevronLeft, ChevronRight, 
   Download, Upload, FileText, CheckCircle, XCircle, X, Settings, Sparkles,
   LogOut, LogIn, AlertTriangle, User, Info, Check, CloudOff, RefreshCw, Globe, Edit2, Camera,
-  ChevronDown, ChevronUp, Receipt, ArrowRightLeft, CreditCard, Landmark, Eye, EyeOff
+  ChevronDown, ChevronUp, Receipt, ArrowRightLeft, CreditCard, Landmark, Eye, EyeOff, Image as ImageIcon
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -64,6 +64,7 @@ export default function App() {
   // --- PENGATURAN BAWAAN & PRIVASI ---
   const [defaultCurrency, setDefaultCurrency] = useState(localStorage.getItem('defaultCurrency') || 'JPY');
   const [geminiKey, setGeminiKey] = useState(localStorage.getItem('gemini_api_key') || '');
+  const [gasUrl, setGasUrl] = useState(localStorage.getItem('gas_drive_url') || ''); // URL Google Apps Script
   const [hideBalance, setHideBalance] = useState(false); 
   
   const [showFloatingAdd, setShowFloatingAdd] = useState(false);
@@ -72,11 +73,12 @@ export default function App() {
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [showDummyModal, setShowDummyModal] = useState(false); 
   
-  // States Modal Kategori Per Item
   const [showItemCatModal, setShowItemCatModal] = useState(false);
   const [activeItemIndex, setActiveItemIndex] = useState(null);
-
   const [newCatName, setNewCatName] = useState('');
+
+  // State untuk modal Preview Gambar (Struk)
+  const [previewImage, setPreviewImage] = useState(null);
 
   const getCurrentDate = () => {
     const now = new Date();
@@ -100,6 +102,7 @@ export default function App() {
   const [date, setDate] = useState(getCurrentDate());
   const [selectedCategories, setSelectedCategories] = useState(['Makanan']);
   const [items, setItems] = useState([]); 
+  const [receiptImageUrl, setReceiptImageUrl] = useState(null); // URL gambar struk di form
   
   // States Khusus Dompet & Transfer
   const [walletId, setWalletId] = useState('');
@@ -107,7 +110,6 @@ export default function App() {
   const [receivedAmount, setReceivedAmount] = useState('');
   const [adminFee, setAdminFee] = useState('');
   
-  // States Dompet Baru
   const [newWalletName, setNewWalletName] = useState('');
   const [newWalletCurrency, setNewWalletCurrency] = useState(defaultCurrency);
   const [newWalletBalance, setNewWalletBalance] = useState('');
@@ -123,6 +125,7 @@ export default function App() {
   const fileInputRef = useRef(null);
   const receiptInputRef = useRef(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState(''); // Status proses gambar
   const checkWalletRef = useRef(false);
 
   const defaultExpenseCategories = ['Makanan', 'Transportasi', 'Belanja', 'Tagihan', 'Hiburan', 'Kesehatan', 'Pendidikan', 'Biaya Admin', 'Lainnya'];
@@ -138,7 +141,6 @@ export default function App() {
     return [...defaultIncomeCategories, ...custom];
   }, [customCategories]);
 
-  // FIX: Reset kategori default hanya saat ganti tab (expense/income) & tidak sedang edit
   useEffect(() => {
     if(!editId && type !== 'transfer') {
        setSelectedCategories([type === 'expense' ? 'Makanan' : 'Gaji']);
@@ -253,7 +255,6 @@ export default function App() {
     }
   };
 
-  // --- PERHITUNGAN SALDO & KEKAYAAN BERSIH ---
   const walletBalances = useMemo(() => {
     const balances = {};
     wallets.forEach(w => balances[w.id] = parseFloat(w.initialBalance || 0));
@@ -287,6 +288,8 @@ export default function App() {
   const handleSaveSettings = (key, val) => {
       if(key === 'gemini') {
           setGeminiKey(val); localStorage.setItem('gemini_api_key', val);
+      } else if(key === 'gas') {
+          setGasUrl(val); localStorage.setItem('gas_drive_url', val);
       } else if (key === 'currency') {
           setDefaultCurrency(val); localStorage.setItem('defaultCurrency', val);
           setReportCurrency(val);
@@ -337,32 +340,91 @@ export default function App() {
       } catch (error) { setSyncStatus('offline'); }
   };
 
-  // --- AI SCANNER ---
-  const handleScanReceipt = (e) => {
+  // --- FUNGSI KOMPRESI GAMBAR ---
+  const compressImage = (file) => {
+      return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(file);
+          reader.onload = (event) => {
+              const img = new Image();
+              img.src = event.target.result;
+              img.onload = () => {
+                  const canvas = document.createElement('canvas');
+                  const MAX_WIDTH = 800; // Ukuran optimal untuk Drive & AI
+                  let width = img.width;
+                  let height = img.height;
+                  
+                  if (width > MAX_WIDTH) {
+                      height = Math.round((height * MAX_WIDTH) / width);
+                      width = MAX_WIDTH;
+                  }
+                  
+                  canvas.width = width;
+                  canvas.height = height;
+                  const ctx = canvas.getContext('2d');
+                  ctx.drawImage(img, 0, 0, width, height);
+                  // Return base64 string without data:image/jpeg;base64, prefix
+                  resolve(canvas.toDataURL('image/jpeg', 0.7).split(',')[1]);
+              };
+          };
+      });
+  };
+
+  // --- AI SCANNER & UPLOAD DRIVE ---
+  const handleScanReceipt = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (!geminiKey) { setNotification({ type: 'error', message: 'Isi Gemini API Key di Pengaturan!' }); e.target.value = null; return; }
+    if (!geminiKey) { 
+        setNotification({ type: 'error', message: 'Isi Gemini API Key di Pengaturan!' }); 
+        e.target.value = null; 
+        return; 
+    }
 
     setIsScanning(true);
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = async () => {
-      try {
-        const base64Data = reader.result.split(',')[1];
-        let mimeType = file.type;
-        if (!mimeType) { mimeType = file.name.toLowerCase().endsWith('.heic') ? 'image/heic' : 'image/jpeg'; }
+    
+    try {
+        setUploadStatus('Mengompres gambar...');
+        const base64Data = await compressImage(file);
         
+        let uploadedImageUrl = null;
+
+        // 1. UPLOAD KE GOOGLE DRIVE (JIKA URL ADA)
+        if (gasUrl) {
+            setUploadStatus('Menyimpan ke Drive...');
+            try {
+                const response = await fetch(gasUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({
+                        base64: base64Data,
+                        name: `Struk_${Date.now()}.jpg`,
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.status === 'success') {
+                    uploadedImageUrl = data.url;
+                    setReceiptImageUrl(data.url);
+                }
+            } catch (err) {
+                console.error("Gagal simpan ke Drive:", err);
+                setNotification({ type: 'error', message: 'Gagal upload ke Drive. AI tetap berjalan.' });
+            }
+        }
+
+        // 2. BACA DENGAN GEMINI AI
+        setUploadStatus('AI sedang menganalisis...');
         const prompt = "Ekstrak data dari gambar struk/receipt belanja ini. Jika bahasa asing, biarkan namanya atau terjemahkan sedikit agar mudah dimengerti. " +
         "Kembalikan HANYA format JSON MURNI tanpa markdown. Formatnya harus: " +
         "{\"desc\": \"Nama Toko/Restoran\", \"total\": angka_tanpa_simbol, \"tgl\": \"YYYY-MM-DD\", \"curr\": \"KODE_MATA_UANG\", \"items\": [{\"n\": \"Nama Barang\", \"p\": harga_angka_bulat}]} " +
         "Catatan: 'total' dan 'p' harus NUMBER. Pajak/diskon masukkan sebagai item tersendiri di dalam list items.";
 
-        const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + geminiKey, {
+        const aiResponse = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + geminiKey, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: mimeType, data: base64Data } }] }] })
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: base64Data } }] }] })
         });
 
-        const data = await response.json();
+        const data = await aiResponse.json();
         if (data.error) throw new Error(data.error.message);
 
         let rawText = data.candidates[0].content.parts[0].text;
@@ -382,21 +444,21 @@ export default function App() {
             setCurrency(result.curr);
         }
         
-        // Inisiasi items dengan properti category yang kosong
         if (result.items && Array.isArray(result.items)) {
             setItems(result.items.map(item => ({ name: item.n || 'Item', price: item.p || 0, category: '' })));
         } else { setItems([]); }
         
         setType('expense'); setEditId(null);
-        setNotification({ type: 'success', message: 'Struk berhasil dibaca! Periksa rincian di form.' });
+        setNotification({ type: 'success', message: 'Struk berhasil dibaca!' });
 
-      } catch (error) {
+    } catch (error) {
         console.error("AI Scan Error:", error);
         setNotification({ type: 'error', message: "Gagal membaca struk. (Error: " + (error.message || "Parse Error") + ")" });
-      } finally {
-        setIsScanning(false); e.target.value = null; 
-      }
-    };
+    } finally {
+        setIsScanning(false); 
+        setUploadStatus('');
+        e.target.value = null; 
+    }
   };
 
   const handleAddItem = () => setItems([...items, { name: '', price: '', category: '' }]);
@@ -456,7 +518,6 @@ export default function App() {
     } catch (error) { setSyncStatus('offline'); }
   };
 
-  // Mengembalikan fitur multi-select untuk memilih lebih dari 1 kategori
   const toggleCategory = (cat) => {
     if (selectedCategories.includes(cat)) {
       if (selectedCategories.length > 1) {
@@ -517,6 +578,7 @@ export default function App() {
           transactionData.category = selectedCategories[0] || 'Umum';
           transactionData.currency = wallets.find(w=>w.id === walletId)?.currency || defaultCurrency;
           transactionData.items = cleanItems;
+          if (receiptImageUrl) transactionData.receiptUrl = receiptImageUrl; // Simpan URL Gambar
       }
 
       if (editId) {
@@ -529,7 +591,7 @@ export default function App() {
       }
       
       setHomeViewDate(selectedDate); setDescription(''); setAmount(''); setDate(getCurrentDate()); setItems([]);
-      setReceivedAmount(''); setAdminFee('');
+      setReceivedAmount(''); setAdminFee(''); setReceiptImageUrl(null);
       const currentList = type === 'expense' ? expenseCategories : incomeCategories;
       setSelectedCategories([currentList[0]]);
     } catch (error) {
@@ -551,6 +613,7 @@ export default function App() {
         setDescription('');
     } else {
         setDescription(t.description); 
+        setReceiptImageUrl(t.receiptUrl || null);
         if(t.items && Array.isArray(t.items)) setItems(t.items); else setItems([]);
         
         let cats = [];
@@ -567,7 +630,7 @@ export default function App() {
 
   const cancelEdit = () => {
     setEditId(null); setDescription(''); setAmount(''); setDate(getCurrentDate()); setItems([]);
-    setReceivedAmount(''); setAdminFee('');
+    setReceivedAmount(''); setAdminFee(''); setReceiptImageUrl(null);
     setSelectedCategories([type === 'expense' ? expenseCategories[0] : incomeCategories[0]]);
   };
 
@@ -581,7 +644,6 @@ export default function App() {
       else setExpandedId(id);
   };
 
-  // --- UI COMPONENTS: HEADER BARU (SUPER RINGKAS TANPA NAMA & DOMPETKU) ---
   const renderHeader = () => {
     return (
       <div className="bg-gradient-to-b from-blue-700 to-indigo-800 px-5 pt-6 pb-6 text-white rounded-b-[2rem] shadow-lg mb-2 relative overflow-hidden">
@@ -690,7 +752,7 @@ export default function App() {
           {isScanning && (
             <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
               <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-2" />
-              <p className="text-sm font-bold text-gray-700">Menganalisis Struk...</p>
+              <p className="text-sm font-bold text-gray-700">{uploadStatus}</p>
             </div>
           )}
 
@@ -718,6 +780,7 @@ export default function App() {
             
             {type === 'transfer' ? (
                 <div className="space-y-4 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                   {/* ... Form Transfer ... */}
                    <div className="grid grid-cols-2 gap-3">
                        <div>
                           <label className="block text-[10px] font-bold text-gray-500 mb-1">DARI DOMPET (Asal)</label>
@@ -755,7 +818,6 @@ export default function App() {
                    <div>
                        <label className="block text-[10px] font-bold text-gray-500 mb-1">BIAYA ADMIN / TRANSAKSI (Opsional)</label>
                        <input type="number" value={adminFee} onChange={(e) => setAdminFee(e.target.value)} placeholder={`0 ${wAsal ? wAsal.currency : ''}`} className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500 transition-all text-xs" />
-                       <p className="text-[9px] text-gray-400 mt-1">Biaya ini akan dicatat otomatis sebagai pengeluaran.</p>
                    </div>
                    
                    <div>
@@ -776,7 +838,16 @@ export default function App() {
                     </div>
                 
                     <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Deskripsi Kegiatan</label>
+                      <div className="flex justify-between items-end mb-1">
+                          <label className="block text-xs font-medium text-gray-500">Deskripsi Kegiatan</label>
+                          {/* Tampilkan thumbnail struk jika ada */}
+                          {receiptImageUrl && (
+                              <div className="relative flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 cursor-pointer hover:bg-blue-100" onClick={() => setPreviewImage(receiptImageUrl)}>
+                                  <ImageIcon className="w-3 h-3" /> Foto Struk
+                                  <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white rounded-full p-0.5 hover:bg-rose-600" onClick={(e) => { e.stopPropagation(); setReceiptImageUrl(null); }}><X className="w-2.5 h-2.5"/></span>
+                              </div>
+                          )}
+                      </div>
                       <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder={type === 'expense' ? "Makan Siang..." : "Gaji Bulanan..."} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:border-blue-500 transition-all font-medium" />
                     </div>
 
@@ -789,7 +860,7 @@ export default function App() {
                         {items.length === 0 ? (
                             <p className="text-[10px] text-gray-400 text-center italic mb-2">Tambah manual rincian harga untuk pelacakan</p>
                         ) : (
-                            <div className="space-y-2 mb-3">
+                            <div className="space-y-2 mb-3 max-h-48 overflow-y-auto pr-1">
                                 {items.map((item, index) => (
                                     <div key={"item-" + index} className="flex flex-col gap-2 p-2 bg-white rounded-lg border border-gray-100 mb-2">
                                         <div className="flex items-center gap-2">
@@ -798,7 +869,6 @@ export default function App() {
                                             <button type="button" onClick={() => handleRemoveItem(index)} className="text-gray-300 hover:text-rose-500"><XCircle className="w-5 h-5" /></button>
                                         </div>
                                         <div className="flex justify-start">
-                                            {/* Tombol Label Per Item yang Membuka Modal */}
                                             <button type="button" onClick={() => handleOpenItemCatModal(index)} className={"text-[10px] px-2 py-1 rounded-md border flex items-center gap-1 transition-colors " + (item.category ? "bg-blue-50 border-blue-200 text-blue-700 font-bold" : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100")}>
                                                 <Tag className="w-3 h-3" /> {item.category || 'Pilih Label (Opsional)'}
                                             </button>
@@ -907,10 +977,16 @@ export default function App() {
                             </div>
                         </div>
                         
-                        {/* Rincian Nota UI Dropdown (Dilengkapi Label) */}
+                        {/* Rincian Nota UI Dropdown */}
                         {hasItems && !isTransfer && isExpanded && (
                             <div className="bg-blue-50/30 border-t border-gray-100 p-4 animate-in slide-in-from-top-2">
-                                <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-2 flex items-center gap-1"><Receipt className="w-3 h-3" /> Rincian Item</p>
+                                <div className="flex justify-between items-center mb-2">
+                                    <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center gap-1"><Receipt className="w-3 h-3" /> Rincian Item</p>
+                                    {/* Tombol Lihat Struk di Riwayat */}
+                                    {t.receiptUrl && (
+                                        <button onClick={() => setPreviewImage(t.receiptUrl)} className="text-[10px] font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded border border-purple-200 flex items-center gap-1 hover:bg-purple-200"><ImageIcon className="w-3 h-3"/> Lihat Foto</button>
+                                    )}
+                                </div>
                                 <ul className="space-y-1.5">
                                     {t.items.map((item, idx) => (
                                         <li key={"det-" + idx} className="flex justify-between items-start text-xs border-b border-gray-200/50 pb-1.5 last:border-0 last:pb-0">
@@ -925,7 +1001,6 @@ export default function App() {
                             </div>
                         )}
                         
-                        {/* Detail Info Transfer */}
                         {isTransfer && isExpanded && (
                             <div className="bg-gray-50 border-t border-gray-100 p-4 animate-in slide-in-from-top-2 text-xs">
                                 <p className="mb-1"><span className="text-gray-500">Tujuan:</span> <b>{wallets.find(w=>w.id === t.toWalletId)?.name || '?'}</b></p>
@@ -933,7 +1008,6 @@ export default function App() {
                                 {t.adminFee > 0 && <p className="text-rose-500"><span className="text-gray-500">Biaya Admin:</span> -{formatCurrency(t.adminFee, t.currency)}</p>}
                             </div>
                         )}
-                        {/* Tombol kecil paksa buka kalau transfer */}
                         {isTransfer && !isExpanded && (
                              <button onClick={() => toggleExpand(t.id)} className="absolute bottom-1 right-1/2 translate-x-1/2 text-[9px] text-gray-400 bg-white px-2 rounded-t border border-b-0 border-gray-100"><ChevronDown className="w-3 h-3" /></button>
                         )}
@@ -977,29 +1051,21 @@ export default function App() {
 
   const reportTransactions = useMemo(() => filteredByPeriod.filter(t => (t.currency || 'IDR') === reportCurrency), [filteredByPeriod, reportCurrency]);
 
-  // UPDATE BESAR: Perhitungan kategori sekarang mengekstrak data dari masing-masing item jika ada!
   const categoryStats = useMemo(() => {
     const stats = {}; let totalExpense = 0;
     
     reportTransactions.forEach(t => {
       if (t.type === 'expense') { 
-        
-        // Cek apakah transaksi ini punya daftar item rincian
         if (t.items && t.items.length > 0) {
             let itemsTotal = 0;
-            
             t.items.forEach(item => {
                 const itemPrice = parseFloat(item.price) || 0;
-                // Jika item punya kategori sendiri pakai itu, kalau tidak warisi dari kategori struk utama
                 const itemCat = item.category || (t.categories && t.categories.length > 0 ? t.categories[0] : (t.category || 'Umum'));
                 
                 stats[itemCat] = (stats[itemCat] || 0) + itemPrice;
                 totalExpense += itemPrice;
                 itemsTotal += itemPrice;
             });
-            
-            // Logika Pintar: Jika total keseluruhan struk (amount) lebih besar dari hasil penjumlahan rincian item,
-            // Maka sisa selisih nominalnya akan dimasukkan ke kategori utama struk tersebut.
             const diff = parseFloat(t.amount) - itemsTotal;
             if (diff > 0) {
                 const primaryCat = (t.categories && t.categories.length > 0) ? t.categories[0] : (t.category || 'Umum');
@@ -1007,12 +1073,10 @@ export default function App() {
                 totalExpense += diff;
             }
         } else {
-            // Jika tidak ada item rincian, gunakan cara klasik (berdasarkan kategori utama)
             const primaryCat = (t.categories && t.categories.length > 0) ? t.categories[0] : (t.category || 'Umum');
             stats[primaryCat] = (stats[primaryCat] || 0) + parseFloat(t.amount); 
             totalExpense += parseFloat(t.amount); 
         }
-        
       } else if (t.type === 'transfer' && t.adminFee > 0) {
         stats['Biaya Admin'] = (stats['Biaya Admin'] || 0) + parseFloat(t.adminFee);
         totalExpense += parseFloat(t.adminFee);
@@ -1145,6 +1209,9 @@ export default function App() {
                 
                 {hasItems && !isTransfer && isExpanded && (
                     <div className="mt-3 bg-gray-50 rounded-lg p-3 text-xs animate-in fade-in">
+                        {t.receiptUrl && (
+                            <button onClick={(e) => { e.stopPropagation(); setPreviewImage(t.receiptUrl); }} className="w-full mb-3 text-[10px] font-bold text-purple-600 bg-purple-100 px-2 py-1.5 rounded border border-purple-200 flex items-center justify-center gap-1 hover:bg-purple-200"><ImageIcon className="w-3.5 h-3.5"/> Lihat Foto Struk</button>
+                        )}
                         <ul className="space-y-1.5">
                             {t.items.map((item, idx) => (
                                 <li key={"repdet-" + idx} className="flex justify-between border-b border-gray-200/50 pb-1.5 last:border-0 last:pb-0">
@@ -1168,7 +1235,7 @@ export default function App() {
 
   const downloadCSV = () => {
     if (transactions.length === 0) { setNotification({ type: 'error', message: 'Tidak ada data.' }); return; }
-    const headers = "iso_date,tanggal_display,deskripsi,kategori,tipe,mata_uang,jumlah,dompet_asal,dompet_tujuan,biaya_admin,rincian_item";
+    const headers = "iso_date,tanggal_display,deskripsi,kategori,tipe,mata_uang,jumlah,dompet_asal,dompet_tujuan,biaya_admin,rincian_item,url_struk";
     const csvRows = [headers];
     
     transactions.forEach(t => {
@@ -1181,7 +1248,6 @@ export default function App() {
       if (t.items && t.items.length > 0) {
           itemsString = t.items.map(i => {
               const cleanName = (i.name || '').split('"').join('""');
-              // Format penyimpanan CSV ditambahkan property category agar bisa direstore
               return cleanName + "::" + (i.price || 0) + "::" + (i.category || '');
           }).join("||");
       }
@@ -1196,7 +1262,8 @@ export default function App() {
                   (t.walletId || '') + "," +
                   (t.toWalletId || '') + "," +
                   (t.adminFee || 0) + "," +
-                  '"' + itemsString + '"';
+                  '"' + itemsString + '",' +
+                  '"' + (t.receiptUrl || '') + '"';
       csvRows.push(row);
     });
     
@@ -1204,7 +1271,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', 'Backup_Dompetku_V3_4.csv');
+    link.setAttribute('download', 'Backup_Dompetku_V4_Full.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1252,9 +1319,20 @@ export default function App() {
             const catsArray = categoryRaw.split(' & ').map(c => c.trim()).filter(Boolean);
 
             let curr = 'IDR'; let amt = 0; 
-            let wId = wallets[0]?.id || ''; let toWId = ''; let aFee = 0; let parsedItems = [];
+            let wId = wallets[0]?.id || ''; let toWId = ''; let aFee = 0; let parsedItems = []; let recUrl = null;
 
-            if (cols.length >= 11) {
+            if (cols.length >= 12) {
+                curr = clean(cols[5]); amt = parseFloat(clean(cols[6]));
+                wId = clean(cols[7]) || wId;
+                toWId = clean(cols[8]);
+                aFee = parseFloat(clean(cols[9]) || 0);
+                const itemsRaw = clean(cols[10]);
+                if (itemsRaw) parsedItems = itemsRaw.split('||').map(itemStr => { 
+                    const parts = itemStr.split('::'); 
+                    return { name: parts[0] || 'Item', price: parseFloat(parts[1]) || 0, category: parts[2] || '' }; 
+                });
+                recUrl = clean(cols[11]);
+            } else if (cols.length >= 11) {
                 curr = clean(cols[5]); amt = parseFloat(clean(cols[6]));
                 wId = clean(cols[7]) || wId;
                 toWId = clean(cols[8]);
@@ -1281,6 +1359,7 @@ export default function App() {
                 categories: catsArray.length > 0 ? catsArray : ['Umum'],
                 category: catsArray[0] || 'Umum',
                 currency: curr, walletId: wId, toWalletId: toWId, adminFee: aFee, items: parsedItems,
+                receiptUrl: recUrl,
                 date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
                 transactionDate: dateObj.getTime(), createdAt: Date.now()
               });
@@ -1321,11 +1400,9 @@ export default function App() {
     if (!user) return;
     setShowDummyModal(false); setLoading(true); setSyncStatus('saving');
     try {
-      // 1. Siapkan dompet untuk simulasi (gunakan yang ada)
       const w1 = wallets[0]?.id || '';
       const w2 = wallets.length > 1 ? wallets[1].id : w1;
       
-      // 2. Sesuaikan nominal berdasarkan mata uang (IDR vs JPY/Lainnya)
       const isIDR = defaultCurrency === 'IDR';
       const multiplier = isIDR ? 100 : 1; 
       const baseSalary = isIDR ? 5000000 : 250000;
@@ -1344,7 +1421,6 @@ export default function App() {
         { desc: 'Top-up Kartu Transport', amount: 2000 * multiplier, type: 'expense', cats: ['Transportasi'], dayOffset: 2, curr: curr, walletId: w1, items: [] }
       ];
 
-      // 3. Jika ada lebih dari 1 dompet, simulasikan transfer beda dompet (Tarik tunai)
       if (wallets.length > 1) {
           const dompetAsal = wallets[0];
           const dompetTujuan = wallets[1];
@@ -1422,7 +1498,6 @@ export default function App() {
             </select>
             <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
           </div>
-          <p className="text-[10px] text-gray-400 mt-1">Digunakan untuk dompet baru dan laporan utama.</p>
         </div>
       </div>
 
@@ -1446,18 +1521,30 @@ export default function App() {
 
       <div className="bg-white rounded-2xl shadow-sm border border-purple-100 p-5 mb-6 relative overflow-hidden">
         <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none"><Sparkles className="w-16 h-16 text-purple-600" /></div>
-        <h3 className="text-sm font-bold text-purple-600 uppercase tracking-wider mb-2 flex items-center gap-2"><Sparkles className="w-4 h-4" /> Fitur AI Scan Struk</h3>
-        <p className="text-xs text-gray-500 mb-4 pr-10">Masukkan API Key dari Google Gemini untuk mengaktifkan fitur scan otomatis. Data ini aman dan hanya disimpan di HP Anda.</p>
+        <h3 className="text-sm font-bold text-purple-600 uppercase tracking-wider mb-2 flex items-center gap-2"><Sparkles className="w-4 h-4" /> Integrasi AI & Drive</h3>
+        <p className="text-xs text-gray-500 mb-4 pr-10">Kunci API Gemini diperlukan untuk scan teks struk. Webhook Apps Script diperlukan untuk menyimpan foto ke Drive.</p>
         
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Gemini API Key</label>
-          <input 
-            type="password" 
-            value={geminiKey} 
-            onChange={(e) => handleSaveSettings('gemini', e.target.value)} 
-            placeholder="AIzaSy..." 
-            className="w-full bg-purple-50/50 border border-purple-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all font-mono text-sm"
-          />
+        <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Gemini API Key</label>
+              <input 
+                type="password" 
+                value={geminiKey} 
+                onChange={(e) => handleSaveSettings('gemini', e.target.value)} 
+                placeholder="AIzaSy..." 
+                className="w-full bg-purple-50/50 border border-purple-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all font-mono text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">URL Webhook Google Drive</label>
+              <input 
+                type="text" 
+                value={gasUrl} 
+                onChange={(e) => handleSaveSettings('gas', e.target.value)} 
+                placeholder="https://script.google.com/macros/s/..." 
+                className="w-full bg-blue-50/50 border border-blue-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono text-[10px]"
+              />
+            </div>
         </div>
       </div>
 
@@ -1511,7 +1598,7 @@ export default function App() {
         <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data & Dompet</button>
       </div>
       
-      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v3.4.0 (Item Level Labeling)</div>
+      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v4.0 (Drive Sync + Item Labeling)</div>
     </div>
   );
 
@@ -1543,7 +1630,14 @@ export default function App() {
           </div>
         )}
 
-        {/* MODAL PILIH LABEL UNTUK ITEM */}
+        {/* MODAL FULLSCREEN PREVIEW GAMBAR STRUK */}
+        {previewImage && (
+            <div className="fixed inset-0 bg-black/90 z-[90] flex flex-col items-center justify-center p-4 animate-in fade-in zoom-in duration-200">
+                <button onClick={() => setPreviewImage(null)} className="absolute top-6 right-6 p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors"><X className="w-6 h-6" /></button>
+                <img src={previewImage} alt="Preview Struk" className="max-w-full max-h-[80vh] rounded-lg shadow-2xl object-contain border border-white/10" />
+            </div>
+        )}
+
         {showItemCatModal && (
           <div className="fixed inset-0 bg-black/40 z-[80] flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl max-h-[80vh] overflow-y-auto">
