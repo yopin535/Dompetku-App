@@ -4,7 +4,7 @@ import {
   Cloud, Loader2, Tag, Calendar, PieChart, List, ChevronLeft, ChevronRight, 
   Download, Upload, FileText, CheckCircle, XCircle, X, Settings, Sparkles,
   LogOut, LogIn, AlertTriangle, User, Info, Check, CloudOff, RefreshCw, Globe, Edit2, Camera,
-  ChevronDown, ChevronUp, Receipt, ArrowRightLeft, CreditCard, Landmark, Eye, EyeOff, Image as ImageIcon
+  ChevronDown, ChevronUp, Receipt, ArrowRightLeft, CreditCard, Landmark, Eye, EyeOff, Image as ImageIcon, Users, CalendarDays, ArrowUpRight, ArrowDownLeft
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -64,7 +64,7 @@ export default function App() {
   // --- PENGATURAN BAWAAN & PRIVASI ---
   const [defaultCurrency, setDefaultCurrency] = useState(localStorage.getItem('defaultCurrency') || 'JPY');
   const [geminiKey, setGeminiKey] = useState(localStorage.getItem('gemini_api_key') || '');
-  const [gasUrl, setGasUrl] = useState(localStorage.getItem('gas_drive_url') || ''); // URL Google Apps Script
+  const [gasUrl, setGasUrl] = useState(localStorage.getItem('gas_drive_url') || ''); 
   const [hideBalance, setHideBalance] = useState(false); 
   
   const [showFloatingAdd, setShowFloatingAdd] = useState(false);
@@ -77,7 +77,6 @@ export default function App() {
   const [activeItemIndex, setActiveItemIndex] = useState(null);
   const [newCatName, setNewCatName] = useState('');
 
-  // State untuk modal Preview Gambar (Struk)
   const [previewImage, setPreviewImage] = useState(null);
 
   const getCurrentDate = () => {
@@ -95,20 +94,25 @@ export default function App() {
   ];
 
   // --- FORM STATES ---
+  // type sekarang bisa: 'expense', 'income', 'transfer', 'debt'
   const [type, setType] = useState('expense'); 
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState(defaultCurrency); 
   const [date, setDate] = useState(getCurrentDate());
-  const [selectedCategories, setSelectedCategories] = useState([]); // Default dikosongkan
+  const [selectedCategories, setSelectedCategories] = useState([]);
   const [items, setItems] = useState([]); 
-  const [receiptImageUrl, setReceiptImageUrl] = useState(null); // URL gambar struk di form
+  const [receiptImageUrl, setReceiptImageUrl] = useState(null); 
   
-  // States Khusus Dompet & Transfer
-  const [walletId, setWalletId] = useState(''); // Default dikosongkan
+  const [walletId, setWalletId] = useState('');
   const [toWalletId, setToWalletId] = useState('');
   const [receivedAmount, setReceivedAmount] = useState('');
   const [adminFee, setAdminFee] = useState('');
+
+  // States Khusus Utang/Piutang
+  const [debtType, setDebtType] = useState('lend'); // 'lend' = Meminjamkan (Piutang), 'borrow' = Meminjam (Utang)
+  const [personName, setPersonName] = useState('');
+  const [dueDate, setDueDate] = useState('');
   
   const [newWalletName, setNewWalletName] = useState('');
   const [newWalletCurrency, setNewWalletCurrency] = useState(defaultCurrency);
@@ -122,14 +126,13 @@ export default function App() {
   const [reportType, setReportType] = useState('monthly'); 
   const [reportCurrency, setReportCurrency] = useState(defaultCurrency); 
   
-  // NEW: State untuk Accordion di Laporan dan Warna Grafik
   const [expandedCategory, setExpandedCategory] = useState(null);
   const CHART_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#f43f5e', '#14b8a6', '#84cc16'];
   
   const fileInputRef = useRef(null);
   const receiptInputRef = useRef(null);
   const [isScanning, setIsScanning] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState(''); // Status proses gambar
+  const [uploadStatus, setUploadStatus] = useState(''); 
   const checkWalletRef = useRef(false);
 
   const defaultExpenseCategories = ['Makanan', 'Transportasi', 'Belanja', 'Tagihan', 'Hiburan', 'Kesehatan', 'Pendidikan', 'Biaya Admin', 'Lainnya'];
@@ -146,18 +149,10 @@ export default function App() {
   }, [customCategories]);
 
   useEffect(() => {
-    if(!editId && type !== 'transfer') {
-       setSelectedCategories([]); // Jangan pilih otomatis saat ganti tab
+    if(!editId && type !== 'transfer' && type !== 'debt') {
+       setSelectedCategories([]); 
     }
   }, [type, editId]);
-
-  useEffect(() => {
-      // Sinkronisasi mata uang saja jika dompet dipilih, HAPUS logika auto-select dompet
-      if(walletId) {
-          const w = wallets.find(w => w.id === walletId);
-          if (w) setCurrency(w.currency);
-      }
-  }, [wallets, walletId]);
 
   useEffect(() => {
     if (notification) {
@@ -273,6 +268,15 @@ export default function App() {
            if(balances[t.toWalletId] !== undefined) {
                balances[t.toWalletId] += parseFloat(t.receivedAmount || t.amount || 0);
            }
+       } else if (t.type === 'debt') {
+           // Jika meminjamkan uang, saldo berkurang
+           if (t.debtType === 'lend' && balances[t.walletId] !== undefined) {
+               balances[t.walletId] -= parseFloat(t.amount || 0);
+           }
+           // Jika meminjam uang, saldo bertambah
+           else if (t.debtType === 'borrow' && balances[t.walletId] !== undefined) {
+               balances[t.walletId] += parseFloat(t.amount || 0);
+           }
        }
     });
     return balances;
@@ -342,7 +346,6 @@ export default function App() {
       } catch (error) { setSyncStatus('offline'); }
   };
 
-  // --- FUNGSI KOMPRESI GAMBAR ---
   const compressImage = (file) => {
       return new Promise((resolve) => {
           const reader = new FileReader();
@@ -352,7 +355,7 @@ export default function App() {
               img.src = event.target.result;
               img.onload = () => {
                   const canvas = document.createElement('canvas');
-                  const MAX_WIDTH = 800; // Ukuran optimal untuk Drive & AI
+                  const MAX_WIDTH = 800; 
                   let width = img.width;
                   let height = img.height;
                   
@@ -365,14 +368,12 @@ export default function App() {
                   canvas.height = height;
                   const ctx = canvas.getContext('2d');
                   ctx.drawImage(img, 0, 0, width, height);
-                  // Return base64 string without data:image/jpeg;base64, prefix
                   resolve(canvas.toDataURL('image/jpeg', 0.7).split(',')[1]);
               };
           };
       });
   };
 
-  // --- AI SCANNER & UPLOAD DRIVE ---
   const handleScanReceipt = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -390,7 +391,6 @@ export default function App() {
         
         let uploadedImageUrl = null;
 
-        // 1. UPLOAD KE GOOGLE DRIVE (JIKA URL ADA)
         if (gasUrl) {
             setUploadStatus('Menyimpan ke Drive...');
             try {
@@ -414,7 +414,6 @@ export default function App() {
             }
         }
 
-        // 2. BACA DENGAN GEMINI AI
         setUploadStatus('AI sedang menganalisis...');
         const prompt = "Ekstrak data dari gambar struk/receipt belanja ini. Jika bahasa asing, biarkan namanya atau terjemahkan sedikit agar mudah dimengerti. " +
         "Kembalikan HANYA format JSON MURNI tanpa markdown. Formatnya harus: " +
@@ -505,7 +504,7 @@ export default function App() {
     if (!newCat || !user) return;
     setSyncStatus('saving');
     try {
-      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'categories'), { name: newCat, type, createdAt: Date.now() });
+      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'categories'), { name: newCat, type: type === 'expense' ? 'expense' : 'income', createdAt: Date.now() });
       setSelectedCategories([newCat]);
       setNewCatName(''); setNotification({ type: 'success', message: 'Kategori ditambahkan.' }); setShowCatModal(false);
     } catch (error) { setSyncStatus('offline'); }
@@ -535,7 +534,6 @@ export default function App() {
   const handleAddTransaction = async (e) => {
     e.preventDefault();
     
-    // Validasi Wajib
     if (!walletId) {
         setNotification({ type: 'error', message: 'Pilih Sumber Dana (Dompet) terlebih dahulu!' }); return;
     }
@@ -546,6 +544,10 @@ export default function App() {
     if (type === 'transfer') {
         if(!toWalletId || walletId === toWalletId) {
             setNotification({ type: 'error', message: 'Pilih dompet tujuan yang berbeda!' }); return;
+        }
+    } else if (type === 'debt') {
+        if(!personName) {
+            setNotification({ type: 'error', message: 'Nama Orang / Pihak wajib diisi!' }); return;
         }
     } else {
         if(!description) {
@@ -584,13 +586,20 @@ export default function App() {
           } else {
               transactionData.receivedAmount = parseFloat(amount);
           }
+      } else if (type === 'debt') {
+          transactionData.description = debtType === 'lend' ? `Meminjamkan ke ${personName}` : `Meminjam dari ${personName}`;
+          transactionData.debtType = debtType;
+          transactionData.personName = personName;
+          transactionData.dueDate = dueDate ? new Date(dueDate).getTime() : null;
+          transactionData.status = 'unpaid';
+          transactionData.currency = wallets.find(w=>w.id === walletId)?.currency || defaultCurrency;
       } else {
           transactionData.description = description;
           transactionData.categories = selectedCategories;
           transactionData.category = selectedCategories[0] || 'Umum';
           transactionData.currency = wallets.find(w=>w.id === walletId)?.currency || defaultCurrency;
           transactionData.items = cleanItems;
-          if (receiptImageUrl) transactionData.receiptUrl = receiptImageUrl; // Simpan URL Gambar
+          if (receiptImageUrl) transactionData.receiptUrl = receiptImageUrl; 
       }
 
       if (editId) {
@@ -602,12 +611,11 @@ export default function App() {
         setNotification({ type: 'success', message: 'Tersimpan.' });
       }
       
-      // Reset form ke kosong
       setHomeViewDate(selectedDate); setDescription(''); setAmount(''); setDate(getCurrentDate()); setItems([]);
       setReceivedAmount(''); setAdminFee(''); setReceiptImageUrl(null);
+      setPersonName(''); setDueDate('');
       setSelectedCategories([]);
-      setWalletId('');
-      setToWalletId('');
+      setWalletId(''); setToWalletId('');
     } catch (error) {
       setNotification({ type: 'error', message: editId ? 'Gagal memperbarui.' : 'Gagal menyimpan.' });
       setSyncStatus('offline');
@@ -625,6 +633,15 @@ export default function App() {
         setReceivedAmount(t.receivedAmount?.toString() || '');
         setAdminFee(t.adminFee?.toString() || '');
         setDescription('');
+    } else if (t.type === 'debt') {
+        setDebtType(t.debtType);
+        setPersonName(t.personName || '');
+        if (t.dueDate) {
+            const d = new Date(t.dueDate);
+            setDueDate(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, '0') + "-" + String(d.getDate()).padStart(2, '0'));
+        } else {
+            setDueDate('');
+        }
     } else {
         setDescription(t.description); 
         setReceiptImageUrl(t.receiptUrl || null);
@@ -644,9 +661,9 @@ export default function App() {
   const cancelEdit = () => {
     setEditId(null); setDescription(''); setAmount(''); setDate(getCurrentDate()); setItems([]);
     setReceivedAmount(''); setAdminFee(''); setReceiptImageUrl(null);
+    setPersonName(''); setDueDate('');
     setSelectedCategories([]);
-    setWalletId('');
-    setToWalletId('');
+    setWalletId(''); setToWalletId('');
   };
 
   const handleDelete = async (id) => {
@@ -787,15 +804,16 @@ export default function App() {
           </div>
 
           <form onSubmit={handleAddTransaction} className="space-y-4">
-            <div className="flex bg-gray-100 p-1 rounded-lg h-[42px] gap-1">
-              <button type="button" onClick={() => setType('income')} className={"flex-1 flex items-center justify-center rounded-md text-[11px] md:text-xs font-bold transition-all " + (type === 'income' ? "bg-emerald-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}><TrendingUp className="w-3 h-3 mr-1" /> Pemasukan</button>
-              <button type="button" onClick={() => setType('expense')} className={"flex-1 flex items-center justify-center rounded-md text-[11px] md:text-xs font-bold transition-all " + (type === 'expense' ? "bg-rose-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}><TrendingDown className="w-3 h-3 mr-1" /> Pengeluaran</button>
-              <button type="button" onClick={() => setType('transfer')} className={"flex-1 flex items-center justify-center rounded-md text-[11px] md:text-xs font-bold transition-all " + (type === 'transfer' ? "bg-blue-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}><ArrowRightLeft className="w-3 h-3 mr-1" /> Transfer</button>
+            <div className="flex flex-wrap bg-gray-100 p-1 rounded-xl gap-1">
+              <button type="button" onClick={() => setType('expense')} className={"flex-1 min-w-[70px] flex items-center justify-center py-2 rounded-lg text-[10px] md:text-xs font-bold transition-all " + (type === 'expense' ? "bg-rose-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}><TrendingDown className="w-3 h-3 mr-1" /> Pengeluaran</button>
+              <button type="button" onClick={() => setType('income')} className={"flex-1 min-w-[70px] flex items-center justify-center py-2 rounded-lg text-[10px] md:text-xs font-bold transition-all " + (type === 'income' ? "bg-emerald-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}><TrendingUp className="w-3 h-3 mr-1" /> Pemasukan</button>
+              <button type="button" onClick={() => setType('transfer')} className={"flex-1 min-w-[70px] flex items-center justify-center py-2 rounded-lg text-[10px] md:text-xs font-bold transition-all " + (type === 'transfer' ? "bg-blue-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}><ArrowRightLeft className="w-3 h-3 mr-1" /> Transfer</button>
+              {/* Opsi Baru: Utang/Piutang */}
+              <button type="button" onClick={() => setType('debt')} className={"flex-1 min-w-[70px] flex items-center justify-center py-2 rounded-lg text-[10px] md:text-xs font-bold transition-all " + (type === 'debt' ? "bg-amber-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}><Users className="w-3 h-3 mr-1" /> Utang/Piutang</button>
             </div>
             
             {type === 'transfer' ? (
                 <div className="space-y-4 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
-                   {/* ... Form Transfer ... */}
                    <div className="grid grid-cols-2 gap-3">
                        <div>
                           <label className="block text-[10px] font-bold text-gray-500 mb-1">DARI DOMPET (Asal)</label>
@@ -841,6 +859,53 @@ export default function App() {
                       <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500 text-xs" />
                    </div>
                 </div>
+            ) : type === 'debt' ? (
+                /* --- FORM UTANG/PIUTANG --- */
+                <div className="space-y-4 bg-amber-50/50 p-4 rounded-xl border border-amber-100">
+                    <div className="flex bg-white rounded-lg p-1 shadow-sm border border-amber-200">
+                        <button type="button" onClick={() => setDebtType('lend')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${debtType === 'lend' ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'text-gray-500 hover:bg-gray-50'}`}>Saya Meminjamkan (Piutang)</button>
+                        <button type="button" onClick={() => setDebtType('borrow')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${debtType === 'borrow' ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'text-gray-500 hover:bg-gray-50'}`}>Saya Meminjam (Utang)</button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><CreditCard className="w-3.5 h-3.5" /> Dompet</label>
+                          <div className="relative">
+                              <select value={walletId} onChange={(e) => setWalletId(e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500 appearance-none text-xs font-bold text-amber-700">
+                                <option value="" disabled>-- Pilih --</option>
+                                {wallets.map(w => <option key={"s-"+w.id} value={w.id}>{w.name}</option>)}
+                              </select>
+                              <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> Tanggal Transaksi</label>
+                          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-amber-500 text-xs font-bold text-gray-700" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase">Nama Peminjam / Yang Meminjamkan</label>
+                        <div className="relative">
+                            <Users className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
+                            <input type="text" value={personName} onChange={(e) => setPersonName(e.target.value)} placeholder="Contoh: Budi, Bank Jago..." className="w-full bg-white border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 focus:outline-none focus:border-amber-500 transition-all font-medium text-sm" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase">Jumlah Uang ({wAsal ? wAsal.currency : defaultCurrency})</label>
+                        <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="w-full bg-white border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:border-amber-500 font-bold text-gray-800 text-xl" />
+                        <p className="text-[10px] mt-1 text-gray-500">
+                            {debtType === 'lend' ? 'Saldo dompetmu akan BERKURANG, tapi tidak masuk ke grafik pengeluaran.' : 'Saldo dompetmu akan BERTAMBAH, tapi tidak masuk ke grafik pemasukan.'}
+                        </p>
+                    </div>
+
+                    <div>
+                        <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase flex items-center gap-1"><CalendarDays className="w-3 h-3" /> Tanggal Jatuh Tempo (Opsional)</label>
+                        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:border-amber-500 text-sm" />
+                    </div>
+
+                </div>
             ) : (
                 <>
                     <div className="grid grid-cols-2 gap-3 mb-1">
@@ -863,7 +928,6 @@ export default function App() {
                     <div>
                       <div className="flex justify-between items-end mb-1">
                           <label className="block text-xs font-medium text-gray-500">Deskripsi Kegiatan</label>
-                          {/* Tampilkan thumbnail struk jika ada */}
                           {receiptImageUrl && (
                               <div className="relative flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 cursor-pointer hover:bg-blue-100" onClick={() => setPreviewImage(receiptImageUrl)}>
                                   <ImageIcon className="w-3 h-3" /> Foto Struk
@@ -928,9 +992,9 @@ export default function App() {
 
             <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100">
               {editId && <button type="button" onClick={cancelEdit} className="w-1/3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 rounded-xl transition-colors">Batal</button>}
-              <button type="submit" disabled={!user || loading || isScanning || wallets.length === 0} className={"text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed " + (editId ? "w-2/3 bg-blue-600 hover:bg-blue-700" : "w-full bg-gray-900 hover:bg-black")}>
+              <button type="submit" disabled={!user || loading || isScanning || wallets.length === 0} className={"text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed " + (editId ? "w-2/3 bg-blue-600 hover:bg-blue-700" : (type === 'debt' ? "w-full bg-amber-600 hover:bg-amber-700" : "w-full bg-gray-900 hover:bg-black"))}>
                 {editId ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />} 
-                {editId ? "Simpan Perubahan" : (type === 'transfer' ? "Proses Transfer" : "Simpan Transaksi")}
+                {editId ? "Simpan Perubahan" : (type === 'transfer' ? "Proses Transfer" : (type === 'debt' ? "Catat Catatan" : "Simpan Transaksi"))}
               </button>
             </div>
           </form>
@@ -959,22 +1023,46 @@ export default function App() {
                   <div className="space-y-3">
                     {group.items.map((t) => {
                       const isTransfer = t.type === 'transfer';
+                      const isDebt = t.type === 'debt';
                       const hasItems = t.items && t.items.length > 0;
                       const isExpanded = expandedId === t.id;
                       const dompetAsal = wallets.find(w => w.id === t.walletId);
                       
+                      // Penentuan UI Berdasarkan Tipe
+                      let IconComponent = TrendingDown;
+                      let iconColor = "bg-rose-100 text-rose-600";
+                      let textColor = "text-rose-600";
+                      let sign = "-";
+                      let subTags = [];
+
+                      if (isTransfer) {
+                          IconComponent = ArrowRightLeft; iconColor = "bg-blue-50 text-blue-600"; textColor = "text-gray-700"; sign = "";
+                      } else if (t.type === 'income') {
+                          IconComponent = TrendingUp; iconColor = "bg-emerald-100 text-emerald-600"; textColor = "text-emerald-600"; sign = "+";
+                      } else if (isDebt) {
+                          if (t.debtType === 'lend') {
+                              IconComponent = ArrowUpRight; iconColor = "bg-amber-100 text-amber-600"; textColor = "text-gray-700"; sign = "-";
+                              subTags = [{label: 'Beri Pinjaman', style: 'bg-amber-50 text-amber-600 border border-amber-100 font-bold'}];
+                          } else {
+                              IconComponent = ArrowDownLeft; iconColor = "bg-amber-100 text-amber-600"; textColor = "text-gray-700"; sign = "+";
+                              subTags = [{label: 'Meminjam', style: 'bg-amber-50 text-amber-600 border border-amber-100 font-bold'}];
+                          }
+                      }
+
                       return (
                       <div key={t.id} className="group bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all overflow-hidden relative">
                         <div className="p-4 flex items-center justify-between">
                             <div className="flex items-center gap-4 w-2/3">
-                              <div className={"w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 " + (isTransfer ? "bg-blue-50 text-blue-600" : (t.type === 'income' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"))}>
-                                 {isTransfer ? <ArrowRightLeft className="w-4 h-4" /> : (t.type === 'income' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />)}
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${iconColor}`}>
+                                 <IconComponent className="w-5 h-5" />
                               </div>
                               <div className="min-w-0">
                                 <h4 className="font-semibold text-gray-800 text-sm truncate">{t.description}</h4>
                                 <div className="flex flex-wrap gap-1 mt-1">
                                   {isTransfer ? (
                                       <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded font-bold">Transfer</span>
+                                  ) : isDebt ? (
+                                      subTags.map(st => <span key={t.id+st.label} className={`text-[9px] px-1.5 py-0.5 rounded ${st.style}`}>{st.label}</span>)
                                   ) : (
                                     (t.categories || (t.category ? [t.category] : ['Umum'])).map(catLabel => (
                                         <span key={t.id + "-" + catLabel} className="text-[9px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">{catLabel}</span>
@@ -985,11 +1073,11 @@ export default function App() {
                               </div>
                             </div>
                             <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                              <span className={"font-bold text-sm " + (isTransfer ? "text-gray-700" : (t.type === 'income' ? "text-emerald-600" : "text-rose-600"))}>
-                                 {isTransfer ? "" : (t.type === 'income' ? "+" : "-")}{formatCurrency(t.amount, t.currency)}
+                              <span className={`font-bold text-sm ${textColor}`}>
+                                 {sign}{formatCurrency(t.amount, t.currency)}
                               </span>
                               <div className="flex items-center gap-2 mt-1">
-                                  {hasItems && !isTransfer && (
+                                  {hasItems && !isTransfer && !isDebt && (
                                       <button onClick={() => toggleExpand(t.id)} className="text-[10px] flex items-center gap-0.5 text-blue-600 font-medium bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
                                           Nota {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                                       </button>
@@ -1000,12 +1088,11 @@ export default function App() {
                             </div>
                         </div>
                         
-                        {/* Rincian Nota UI Dropdown */}
-                        {hasItems && !isTransfer && isExpanded && (
+                        {/* Rincian Nota */}
+                        {hasItems && !isTransfer && !isDebt && isExpanded && (
                             <div className="bg-blue-50/30 border-t border-gray-100 p-4 animate-in slide-in-from-top-2">
                                 <div className="flex justify-between items-center mb-2">
                                     <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center gap-1"><Receipt className="w-3 h-3" /> Rincian Item</p>
-                                    {/* Tombol Lihat Struk di Riwayat */}
                                     {t.receiptUrl && (
                                         <button onClick={() => setPreviewImage(t.receiptUrl)} className="text-[10px] font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded border border-purple-200 flex items-center gap-1 hover:bg-purple-200"><ImageIcon className="w-3 h-3"/> Lihat Foto</button>
                                     )}
@@ -1024,6 +1111,7 @@ export default function App() {
                             </div>
                         )}
                         
+                        {/* Info Transfer */}
                         {isTransfer && isExpanded && (
                             <div className="bg-gray-50 border-t border-gray-100 p-4 animate-in slide-in-from-top-2 text-xs">
                                 <p className="mb-1"><span className="text-gray-500">Tujuan:</span> <b>{wallets.find(w=>w.id === t.toWalletId)?.name || '?'}</b></p>
@@ -1031,12 +1119,23 @@ export default function App() {
                                 {t.adminFee > 0 && <p className="text-rose-500"><span className="text-gray-500">Biaya Admin:</span> -{formatCurrency(t.adminFee, t.currency)}</p>}
                             </div>
                         )}
-                        {isTransfer && !isExpanded && (
+                        {(isTransfer || isDebt) && !isExpanded && (
                              <button onClick={() => toggleExpand(t.id)} className="absolute bottom-1 right-1/2 translate-x-1/2 text-[9px] text-gray-400 bg-white px-2 rounded-t border border-b-0 border-gray-100"><ChevronDown className="w-3 h-3" /></button>
                         )}
-                        {isTransfer && isExpanded && (
+                        {(isTransfer || isDebt) && isExpanded && (
                              <button onClick={() => toggleExpand(t.id)} className="w-full bg-gray-100 text-center py-0.5 text-gray-400 hover:bg-gray-200"><ChevronUp className="w-3 h-3 mx-auto" /></button>
                         )}
+
+                        {/* Info Utang */}
+                        {isDebt && isExpanded && (
+                            <div className="bg-amber-50/30 border-t border-amber-100 p-4 animate-in slide-in-from-top-2 text-xs">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-amber-800 font-medium">Status: <b className="uppercase bg-amber-100 text-amber-800 px-2 py-0.5 rounded text-[10px]">Belum Lunas</b></span>
+                                    {t.dueDate && <span className="text-gray-500 flex items-center gap-1"><CalendarDays className="w-3 h-3"/> Jatuh tempo: {new Date(t.dueDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'short'})}</span>}
+                                </div>
+                            </div>
+                        )}
+
                       </div>
                     )})}
                   </div>
@@ -1078,6 +1177,7 @@ export default function App() {
     const stats = {}; let totalExpense = 0;
     
     reportTransactions.forEach(t => {
+      // PERHATIKAN: t.type === 'debt' TIDAK MASUK KESINI, agar tidak mengotori grafik pengeluaran
       if (t.type === 'expense') { 
         if (t.items && t.items.length > 0) {
             let itemsTotal = 0;
@@ -1121,7 +1221,6 @@ export default function App() {
     return { income: inc, expense: exp, balance: inc - exp };
   }, [reportTransactions]);
 
-  // NEW: Mengelompokkan transaksi per kategori untuk Akordeon Laporan
   const transactionsByCategory = useMemo(() => {
     const grouped = {};
     reportTransactions.forEach(t => {
@@ -1738,7 +1837,7 @@ export default function App() {
         <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data & Dompet</button>
       </div>
       
-      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v4.0 (Drive Sync + Item Labeling)</div>
+      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v4.1 (Debt Tracker Added)</div>
     </div>
   );
 
@@ -1770,7 +1869,6 @@ export default function App() {
           </div>
         )}
 
-        {/* MODAL FULLSCREEN PREVIEW GAMBAR STRUK */}
         {previewImage && (
             <div className="fixed inset-0 bg-black/90 z-[90] flex flex-col items-center justify-center p-4 animate-in fade-in zoom-in duration-200">
                 <button onClick={() => setPreviewImage(null)} className="absolute top-6 right-6 p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors"><X className="w-6 h-6" /></button>
@@ -1900,4 +1998,4 @@ export default function App() {
       </div>
     </div>
   );
-                                                                                     }
+}
