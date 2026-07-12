@@ -4,7 +4,8 @@ import {
   Cloud, Loader2, Tag, Calendar, PieChart, List, ChevronLeft, ChevronRight, 
   Download, Upload, FileText, CheckCircle, XCircle, X, Settings, Sparkles,
   LogOut, LogIn, AlertTriangle, User, Info, Check, CloudOff, RefreshCw, Globe, Edit2, Camera,
-  ChevronDown, ChevronUp, Receipt, ArrowRightLeft, CreditCard, Landmark, Eye, EyeOff, Image as ImageIcon, Users, CalendarDays, ArrowUpRight, ArrowDownLeft
+  ChevronDown, ChevronUp, Receipt, ArrowRightLeft, CreditCard, Landmark, Eye, EyeOff, Image as ImageIcon,
+  HandCoins, Users, CheckSquare
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -62,7 +63,7 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState('synced');
   
   // --- PENGATURAN BAWAAN & PRIVASI ---
-  const [defaultCurrency, setDefaultCurrency] = useState(localStorage.getItem('defaultCurrency') || 'JPY');
+  const [defaultCurrency, setDefaultCurrency] = useState(localStorage.getItem('defaultCurrency') || 'IDR');
   const [geminiKey, setGeminiKey] = useState(localStorage.getItem('gemini_api_key') || '');
   const [gasUrl, setGasUrl] = useState(localStorage.getItem('gas_drive_url') || ''); 
   const [hideBalance, setHideBalance] = useState(false); 
@@ -77,7 +78,10 @@ export default function App() {
   const [activeItemIndex, setActiveItemIndex] = useState(null);
   const [newCatName, setNewCatName] = useState('');
 
+  // Modals untuk Fitur
   const [previewImage, setPreviewImage] = useState(null);
+  const [showDebtModal, setShowDebtModal] = useState(false);
+  const [activeDebtTab, setActiveDebtTab] = useState('lend'); // 'lend' (piutang) or 'borrow' (utang)
 
   const getCurrentDate = () => {
     const now = new Date();
@@ -94,23 +98,23 @@ export default function App() {
   ];
 
   // --- FORM STATES ---
-  // type sekarang bisa: 'expense', 'income', 'transfer', 'debt'
   const [type, setType] = useState('expense'); 
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState(defaultCurrency); 
   const [date, setDate] = useState(getCurrentDate());
-  const [selectedCategories, setSelectedCategories] = useState([]);
+  const [selectedCategories, setSelectedCategories] = useState([]); // Default KOSONG sesuai permintaan
   const [items, setItems] = useState([]); 
   const [receiptImageUrl, setReceiptImageUrl] = useState(null); 
   
-  const [walletId, setWalletId] = useState('');
+  // States Khusus Dompet & Transfer
+  const [walletId, setWalletId] = useState(''); // Default KOSONG sesuai permintaan
   const [toWalletId, setToWalletId] = useState('');
   const [receivedAmount, setReceivedAmount] = useState('');
   const [adminFee, setAdminFee] = useState('');
 
   // States Khusus Utang/Piutang
-  const [debtType, setDebtType] = useState('lend'); // 'lend' = Meminjamkan (Piutang), 'borrow' = Meminjam (Utang)
+  const [debtType, setDebtType] = useState('lend'); // 'lend' (Meminjamkan/Piutang), 'borrow' (Meminjam/Utang)
   const [personName, setPersonName] = useState('');
   const [dueDate, setDueDate] = useState('');
   
@@ -125,9 +129,6 @@ export default function App() {
   const [reportDate, setReportDate] = useState(new Date());
   const [reportType, setReportType] = useState('monthly'); 
   const [reportCurrency, setReportCurrency] = useState(defaultCurrency); 
-  
-  const [expandedCategory, setExpandedCategory] = useState(null);
-  const CHART_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#f43f5e', '#14b8a6', '#84cc16'];
   
   const fileInputRef = useRef(null);
   const receiptInputRef = useRef(null);
@@ -148,9 +149,11 @@ export default function App() {
     return [...defaultIncomeCategories, ...custom];
   }, [customCategories]);
 
+  // Hapus efek auto-select dompet dan kategori. Semua harus dipilih manual.
   useEffect(() => {
-    if(!editId && type !== 'transfer' && type !== 'debt') {
-       setSelectedCategories([]); 
+    if(!editId && (type === 'expense' || type === 'income' || type === 'debt')) {
+       // Kategori dikosongkan saat ganti tab supaya user pilih manual
+       setSelectedCategories([]);
     }
   }, [type, editId]);
 
@@ -269,13 +272,11 @@ export default function App() {
                balances[t.toWalletId] += parseFloat(t.receivedAmount || t.amount || 0);
            }
        } else if (t.type === 'debt') {
-           // Jika meminjamkan uang, saldo berkurang
-           if (t.debtType === 'lend' && balances[t.walletId] !== undefined) {
-               balances[t.walletId] -= parseFloat(t.amount || 0);
-           }
-           // Jika meminjam uang, saldo bertambah
-           else if (t.debtType === 'borrow' && balances[t.walletId] !== undefined) {
-               balances[t.walletId] += parseFloat(t.amount || 0);
+           // Kalkulasi Utang/Piutang di saldo Dompet
+           if (t.debtType === 'lend') { // Meminjamkan (Uang keluar)
+               if(balances[t.walletId] !== undefined) balances[t.walletId] -= parseFloat(t.amount || 0);
+           } else if (t.debtType === 'borrow') { // Meminjam (Uang masuk)
+               if(balances[t.walletId] !== undefined) balances[t.walletId] += parseFloat(t.amount || 0);
            }
        }
     });
@@ -290,6 +291,11 @@ export default function App() {
       });
       return totals;
   }, [wallets, walletBalances, defaultCurrency]);
+
+  // Data utang piutang yang belum lunas
+  const activeDebts = useMemo(() => {
+      return transactions.filter(t => t.type === 'debt' && t.status === 'unpaid');
+  }, [transactions]);
 
   const handleSaveSettings = (key, val) => {
       if(key === 'gemini') {
@@ -358,14 +364,8 @@ export default function App() {
                   const MAX_WIDTH = 800; 
                   let width = img.width;
                   let height = img.height;
-                  
-                  if (width > MAX_WIDTH) {
-                      height = Math.round((height * MAX_WIDTH) / width);
-                      width = MAX_WIDTH;
-                  }
-                  
-                  canvas.width = width;
-                  canvas.height = height;
+                  if (width > MAX_WIDTH) { height = Math.round((height * MAX_WIDTH) / width); width = MAX_WIDTH; }
+                  canvas.width = width; canvas.height = height;
                   const ctx = canvas.getContext('2d');
                   ctx.drawImage(img, 0, 0, width, height);
                   resolve(canvas.toDataURL('image/jpeg', 0.7).split(',')[1]);
@@ -377,11 +377,7 @@ export default function App() {
   const handleScanReceipt = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (!geminiKey) { 
-        setNotification({ type: 'error', message: 'Isi Gemini API Key di Pengaturan!' }); 
-        e.target.value = null; 
-        return; 
-    }
+    if (!geminiKey) { setNotification({ type: 'error', message: 'Isi Gemini API Key di Pengaturan!' }); e.target.value = null; return; }
 
     setIsScanning(true);
     
@@ -390,19 +386,13 @@ export default function App() {
         const base64Data = await compressImage(file);
         
         let uploadedImageUrl = null;
-
         if (gasUrl) {
             setUploadStatus('Menyimpan ke Drive...');
             try {
                 const response = await fetch(gasUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({
-                        base64: base64Data,
-                        name: `Struk_${Date.now()}.jpg`,
-                    })
+                    method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ base64: base64Data, name: `Struk_${Date.now()}.jpg` })
                 });
-                
                 const data = await response.json();
                 if (data.status === 'success') {
                     uploadedImageUrl = data.url;
@@ -454,11 +444,9 @@ export default function App() {
 
     } catch (error) {
         console.error("AI Scan Error:", error);
-        setNotification({ type: 'error', message: "Gagal membaca struk. (Error: " + (error.message || "Parse Error") + ")" });
+        setNotification({ type: 'error', message: "Gagal membaca struk." });
     } finally {
-        setIsScanning(false); 
-        setUploadStatus('');
-        e.target.value = null; 
+        setIsScanning(false); setUploadStatus(''); e.target.value = null; 
     }
   };
 
@@ -504,7 +492,7 @@ export default function App() {
     if (!newCat || !user) return;
     setSyncStatus('saving');
     try {
-      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'categories'), { name: newCat, type: type === 'expense' ? 'expense' : 'income', createdAt: Date.now() });
+      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'categories'), { name: newCat, type, createdAt: Date.now() });
       setSelectedCategories([newCat]);
       setNewCatName(''); setNotification({ type: 'success', message: 'Kategori ditambahkan.' }); setShowCatModal(false);
     } catch (error) { setSyncStatus('offline'); }
@@ -524,7 +512,7 @@ export default function App() {
       if (selectedCategories.length > 1) {
         setSelectedCategories(selectedCategories.filter(c => c !== cat));
       } else {
-        setNotification({ type: 'error', message: 'Minimal pilih 1 kategori.' });
+        setSelectedCategories([]); // Boleh kosong sekarang
       }
     } else {
       setSelectedCategories([...selectedCategories, cat]);
@@ -534,34 +522,33 @@ export default function App() {
   const handleAddTransaction = async (e) => {
     e.preventDefault();
     
+    // VALIDASI KETAT
     if (!walletId) {
-        setNotification({ type: 'error', message: 'Pilih Sumber Dana (Dompet) terlebih dahulu!' }); return;
+        setNotification({ type: 'error', message: 'Pilih Dompet / Sumber Dana terlebih dahulu!' });
+        return;
     }
-    if (!amount || !date || !user) {
-        setNotification({ type: 'error', message: 'Jumlah dan Tanggal wajib diisi!' }); return;
-    }
+    if (!amount || !date || !user) return;
     
     if (type === 'transfer') {
         if(!toWalletId || walletId === toWalletId) {
             setNotification({ type: 'error', message: 'Pilih dompet tujuan yang berbeda!' }); return;
         }
     } else if (type === 'debt') {
-        if(!personName) {
-            setNotification({ type: 'error', message: 'Nama Orang / Pihak wajib diisi!' }); return;
+        if (!personName.trim()) {
+            setNotification({ type: 'error', message: 'Nama teman/orang wajib diisi!' }); return;
         }
     } else {
         if(!description) {
             setNotification({ type: 'error', message: 'Deskripsi tidak boleh kosong!' }); return;
         }
         if(selectedCategories.length === 0) {
-            setNotification({ type: 'error', message: 'Pilih minimal 1 Kategori Utama!' }); return;
+            setNotification({ type: 'error', message: 'Pilih minimal 1 Kategori!' }); return;
         }
     }
 
     setSyncStatus('saving');
     try {
       const selectedDate = new Date(date);
-      const cleanItems = items.filter(i => i.name.trim() !== '' || i.price !== '');
       
       const transactionData = {
         amount: parseFloat(amount), 
@@ -574,26 +561,25 @@ export default function App() {
       if (type === 'transfer') {
           const wAsal = wallets.find(w => w.id === walletId);
           const wTujuan = wallets.find(w => w.id === toWalletId);
-          
           transactionData.description = "Transfer: " + (wAsal?.name || "Asal") + " ➞ " + (wTujuan?.name || "Tujuan");
           transactionData.toWalletId = toWalletId;
           transactionData.currency = wAsal?.currency || defaultCurrency;
           transactionData.targetCurrency = wTujuan?.currency || defaultCurrency;
           transactionData.adminFee = parseFloat(adminFee || 0);
           
-          if (wAsal?.currency !== wTujuan?.currency) {
-              transactionData.receivedAmount = parseFloat(receivedAmount || amount);
-          } else {
-              transactionData.receivedAmount = parseFloat(amount);
-          }
+          if (wAsal?.currency !== wTujuan?.currency) transactionData.receivedAmount = parseFloat(receivedAmount || amount);
+          else transactionData.receivedAmount = parseFloat(amount);
       } else if (type === 'debt') {
-          transactionData.description = debtType === 'lend' ? `Meminjamkan ke ${personName}` : `Meminjam dari ${personName}`;
           transactionData.debtType = debtType;
           transactionData.personName = personName;
-          transactionData.dueDate = dueDate ? new Date(dueDate).getTime() : null;
+          transactionData.dueDate = dueDate;
           transactionData.status = 'unpaid';
+          transactionData.description = (debtType === 'lend' ? "Meminjamkan ke: " : "Pinjaman dari: ") + personName;
+          transactionData.category = 'Utang/Piutang';
+          transactionData.categories = ['Utang/Piutang'];
           transactionData.currency = wallets.find(w=>w.id === walletId)?.currency || defaultCurrency;
       } else {
+          const cleanItems = items.filter(i => i.name.trim() !== '' || i.price !== '');
           transactionData.description = description;
           transactionData.categories = selectedCategories;
           transactionData.category = selectedCategories[0] || 'Umum';
@@ -611,14 +597,53 @@ export default function App() {
         setNotification({ type: 'success', message: 'Tersimpan.' });
       }
       
+      // Reset Form
       setHomeViewDate(selectedDate); setDescription(''); setAmount(''); setDate(getCurrentDate()); setItems([]);
       setReceivedAmount(''); setAdminFee(''); setReceiptImageUrl(null);
       setPersonName(''); setDueDate('');
-      setSelectedCategories([]);
-      setWalletId(''); setToWalletId('');
+      setWalletId(''); // Kembalikan dompet jadi kosong
+      setSelectedCategories([]); // Kembalikan kategori jadi kosong
     } catch (error) {
       setNotification({ type: 'error', message: editId ? 'Gagal memperbarui.' : 'Gagal menyimpan.' });
       setSyncStatus('offline');
+    }
+  };
+
+  // Fungsi Pelunasan Utang
+  const handleSettleDebt = async (debt) => {
+    if (!user) return;
+    setSyncStatus('saving');
+    try {
+        // 1. Ubah status transaksi utang lama jadi Lunas
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', debt.id), { 
+            status: 'paid', 
+            paidAt: Date.now() 
+        });
+
+        // 2. Buat transaksi pelunasan baru agar uang kembali ke dompet
+        const d = new Date();
+        const tData = {
+            amount: debt.amount,
+            type: debt.debtType === 'lend' ? 'income' : 'expense', // Jika tadinya minjemin (uang keluar), sekarang lunas berarti uang masuk (income)
+            walletId: debt.walletId,
+            currency: debt.currency,
+            description: "Pelunasan dari " + debt.personName,
+            category: 'Pelunasan',
+            categories: ['Pelunasan'],
+            date: d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+            transactionDate: d.getTime(),
+            createdAt: Date.now(),
+            isSettlement: true,
+            settledDebtId: debt.id
+        };
+        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), tData);
+        
+        setNotification({type: 'success', message: 'Utang berhasil dilunasi!'});
+        if (activeDebts.length <= 1) setShowDebtModal(false); // Tutup modal jika habis
+    } catch(e) {
+        console.error(e);
+        setNotification({type: 'error', message: 'Gagal melunasi.'});
+        setSyncStatus('offline');
     }
   };
 
@@ -634,14 +659,9 @@ export default function App() {
         setAdminFee(t.adminFee?.toString() || '');
         setDescription('');
     } else if (t.type === 'debt') {
-        setDebtType(t.debtType);
+        setDebtType(t.debtType || 'lend');
         setPersonName(t.personName || '');
-        if (t.dueDate) {
-            const d = new Date(t.dueDate);
-            setDueDate(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, '0') + "-" + String(d.getDate()).padStart(2, '0'));
-        } else {
-            setDueDate('');
-        }
+        setDueDate(t.dueDate || '');
     } else {
         setDescription(t.description); 
         setReceiptImageUrl(t.receiptUrl || null);
@@ -661,9 +681,8 @@ export default function App() {
   const cancelEdit = () => {
     setEditId(null); setDescription(''); setAmount(''); setDate(getCurrentDate()); setItems([]);
     setReceivedAmount(''); setAdminFee(''); setReceiptImageUrl(null);
+    setWalletId(''); setSelectedCategories([]);
     setPersonName(''); setDueDate('');
-    setSelectedCategories([]);
-    setWalletId(''); setToWalletId('');
   };
 
   const handleDelete = async (id) => {
@@ -804,12 +823,11 @@ export default function App() {
           </div>
 
           <form onSubmit={handleAddTransaction} className="space-y-4">
-            <div className="flex flex-wrap bg-gray-100 p-1 rounded-xl gap-1">
-              <button type="button" onClick={() => setType('expense')} className={"flex-1 min-w-[70px] flex items-center justify-center py-2 rounded-lg text-[10px] md:text-xs font-bold transition-all " + (type === 'expense' ? "bg-rose-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}><TrendingDown className="w-3 h-3 mr-1" /> Pengeluaran</button>
-              <button type="button" onClick={() => setType('income')} className={"flex-1 min-w-[70px] flex items-center justify-center py-2 rounded-lg text-[10px] md:text-xs font-bold transition-all " + (type === 'income' ? "bg-emerald-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}><TrendingUp className="w-3 h-3 mr-1" /> Pemasukan</button>
-              <button type="button" onClick={() => setType('transfer')} className={"flex-1 min-w-[70px] flex items-center justify-center py-2 rounded-lg text-[10px] md:text-xs font-bold transition-all " + (type === 'transfer' ? "bg-blue-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}><ArrowRightLeft className="w-3 h-3 mr-1" /> Transfer</button>
-              {/* Opsi Baru: Utang/Piutang */}
-              <button type="button" onClick={() => setType('debt')} className={"flex-1 min-w-[70px] flex items-center justify-center py-2 rounded-lg text-[10px] md:text-xs font-bold transition-all " + (type === 'debt' ? "bg-amber-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}><Users className="w-3 h-3 mr-1" /> Utang/Piutang</button>
+            <div className="flex bg-gray-100 p-1 rounded-lg h-[42px] gap-1 overflow-x-auto hide-scrollbar">
+              <button type="button" onClick={() => setType('income')} className={"flex-none px-3 flex items-center justify-center rounded-md text-[11px] md:text-xs font-bold transition-all " + (type === 'income' ? "bg-emerald-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}><TrendingUp className="w-3 h-3 mr-1" /> Pemasukan</button>
+              <button type="button" onClick={() => setType('expense')} className={"flex-none px-3 flex items-center justify-center rounded-md text-[11px] md:text-xs font-bold transition-all " + (type === 'expense' ? "bg-rose-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}><TrendingDown className="w-3 h-3 mr-1" /> Pengeluaran</button>
+              <button type="button" onClick={() => setType('transfer')} className={"flex-none px-3 flex items-center justify-center rounded-md text-[11px] md:text-xs font-bold transition-all " + (type === 'transfer' ? "bg-blue-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}><ArrowRightLeft className="w-3 h-3 mr-1" /> Transfer</button>
+              <button type="button" onClick={() => setType('debt')} className={"flex-none px-3 flex items-center justify-center rounded-md text-[11px] md:text-xs font-bold transition-all " + (type === 'debt' ? "bg-orange-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}><HandCoins className="w-3 h-3 mr-1" /> Utang/Piutang</button>
             </div>
             
             {type === 'transfer' ? (
@@ -829,7 +847,7 @@ export default function App() {
                           <label className="block text-[10px] font-bold text-gray-500 mb-1">KE DOMPET (Tujuan)</label>
                           <div className="relative">
                               <select value={toWalletId} onChange={(e) => setToWalletId(e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 appearance-none text-xs font-bold">
-                                <option value="">-- Pilih Tujuan --</option>
+                                <option value="" disabled>-- Pilih Tujuan --</option>
                                 {wallets.filter(w => w.id !== walletId).map(w => <option key={"d-"+w.id} value={w.id}>{w.name} ({w.currency})</option>)}
                               </select>
                               <ChevronDown className="absolute right-2 top-2.5 w-3 h-3 text-gray-400 pointer-events-none" />
@@ -860,68 +878,60 @@ export default function App() {
                    </div>
                 </div>
             ) : type === 'debt' ? (
-                /* --- FORM UTANG/PIUTANG --- */
-                <div className="space-y-4 bg-amber-50/50 p-4 rounded-xl border border-amber-100">
-                    <div className="flex bg-white rounded-lg p-1 shadow-sm border border-amber-200">
-                        <button type="button" onClick={() => setDebtType('lend')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${debtType === 'lend' ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'text-gray-500 hover:bg-gray-50'}`}>Saya Meminjamkan (Piutang)</button>
-                        <button type="button" onClick={() => setDebtType('borrow')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${debtType === 'borrow' ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'text-gray-500 hover:bg-gray-50'}`}>Saya Meminjam (Utang)</button>
-                    </div>
+                <div className="space-y-4 bg-orange-50/30 p-4 rounded-xl border border-orange-100">
+                   <div className="flex bg-white p-1 rounded-lg border border-orange-200">
+                      <button type="button" onClick={() => setDebtType('lend')} className={"flex-1 py-1.5 text-xs font-bold rounded-md transition-all " + (debtType === 'lend' ? "bg-orange-500 text-white" : "text-gray-500 hover:text-gray-700")}>Memberi Pinjaman</button>
+                      <button type="button" onClick={() => setDebtType('borrow')} className={"flex-1 py-1.5 text-xs font-bold rounded-md transition-all " + (debtType === 'borrow' ? "bg-orange-500 text-white" : "text-gray-500 hover:text-gray-700")}>Meminjam Uang</button>
+                   </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><CreditCard className="w-3.5 h-3.5" /> Dompet</label>
+                   <div className="grid grid-cols-2 gap-3">
+                      <div>
+                          <label className="block text-[10px] font-bold text-gray-500 mb-1">{debtType === 'lend' ? 'DOMPET KELUAR' : 'DOMPET MASUK'}</label>
                           <div className="relative">
-                              <select value={walletId} onChange={(e) => setWalletId(e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500 appearance-none text-xs font-bold text-amber-700">
-                                <option value="" disabled>-- Pilih --</option>
-                                {wallets.map(w => <option key={"s-"+w.id} value={w.id}>{w.name}</option>)}
+                              <select value={walletId} onChange={(e) => setWalletId(e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-orange-500 appearance-none text-xs font-bold">
+                                <option value="" disabled>-- Pilih Dompet --</option>
+                                {wallets.map(w => <option key={"s-"+w.id} value={w.id}>{w.name} ({w.currency})</option>)}
                               </select>
-                              <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
+                              <ChevronDown className="absolute right-2 top-3 w-4 h-4 text-gray-400 pointer-events-none" />
                           </div>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> Tanggal Transaksi</label>
-                          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-amber-500 text-xs font-bold text-gray-700" />
-                        </div>
-                    </div>
+                      </div>
+                      <div>
+                          <label className="block text-[10px] font-bold text-gray-500 mb-1">TANGGAL CATAT</label>
+                          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-orange-500 text-xs" />
+                      </div>
+                   </div>
 
-                    <div>
-                        <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase">Nama Peminjam / Yang Meminjamkan</label>
-                        <div className="relative">
-                            <Users className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
-                            <input type="text" value={personName} onChange={(e) => setPersonName(e.target.value)} placeholder="Contoh: Budi, Bank Jago..." className="w-full bg-white border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 focus:outline-none focus:border-amber-500 transition-all font-medium text-sm" />
-                        </div>
-                    </div>
+                   <div>
+                       <label className="block text-[10px] font-bold text-gray-500 mb-1">NAMA ORANG/TEMAN</label>
+                       <input type="text" value={personName} onChange={(e) => setPersonName(e.target.value)} placeholder="Contoh: Budi, Kantor..." className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500 transition-all font-medium text-sm" />
+                   </div>
+                   
+                   <div>
+                       <label className="block text-[10px] font-bold text-gray-500 mb-1">NOMINAL {wAsal ? `(${wAsal.currency})` : ''}</label>
+                       <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500 transition-all font-bold text-gray-800 text-lg" />
+                   </div>
 
-                    <div>
-                        <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase">Jumlah Uang ({wAsal ? wAsal.currency : defaultCurrency})</label>
-                        <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="w-full bg-white border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:border-amber-500 font-bold text-gray-800 text-xl" />
-                        <p className="text-[10px] mt-1 text-gray-500">
-                            {debtType === 'lend' ? 'Saldo dompetmu akan BERKURANG, tapi tidak masuk ke grafik pengeluaran.' : 'Saldo dompetmu akan BERTAMBAH, tapi tidak masuk ke grafik pemasukan.'}
-                        </p>
-                    </div>
-
-                    <div>
-                        <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase flex items-center gap-1"><CalendarDays className="w-3 h-3" /> Tanggal Jatuh Tempo (Opsional)</label>
-                        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:border-amber-500 text-sm" />
-                    </div>
-
+                   <div>
+                      <label className="block text-[10px] font-bold text-gray-500 mb-1">TENGGAT WAKTU (Opsional)</label>
+                      <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:border-orange-500 text-xs text-gray-500" />
+                   </div>
                 </div>
             ) : (
                 <>
-                    <div className="grid grid-cols-2 gap-3 mb-1">
+                    <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><CreditCard className="w-3.5 h-3.5" /> Sumber Dana</label>
                           <div className="relative">
-                              <select value={walletId} onChange={(e) => setWalletId(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 appearance-none text-xs font-bold text-blue-700">
-                                <option value="" disabled>-- Pilih --</option>
-                                {wallets.map(w => <option key={"s-"+w.id} value={w.id}>{w.name}</option>)}
+                              <select value={walletId} onChange={(e) => setWalletId(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-blue-500 appearance-none text-sm font-bold text-blue-700">
+                                <option value="" disabled>Pilih Dompet...</option>
+                                {wallets.map(w => <option key={"s-"+w.id} value={w.id}>{w.name} ({w.currency})</option>)}
                               </select>
-                              <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
+                              <ChevronDown className="absolute right-3 top-3 w-4 h-4 text-gray-400 pointer-events-none" />
                           </div>
                         </div>
                         <div>
                           <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> Tanggal</label>
-                          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-500 text-xs font-bold text-gray-700" />
+                          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-blue-500 text-sm font-medium" />
                         </div>
                     </div>
                 
@@ -992,9 +1002,9 @@ export default function App() {
 
             <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100">
               {editId && <button type="button" onClick={cancelEdit} className="w-1/3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 rounded-xl transition-colors">Batal</button>}
-              <button type="submit" disabled={!user || loading || isScanning || wallets.length === 0} className={"text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed " + (editId ? "w-2/3 bg-blue-600 hover:bg-blue-700" : (type === 'debt' ? "w-full bg-amber-600 hover:bg-amber-700" : "w-full bg-gray-900 hover:bg-black"))}>
+              <button type="submit" disabled={!user || loading || isScanning || wallets.length === 0} className={"text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed " + (editId ? "w-2/3 bg-blue-600 hover:bg-blue-700" : "w-full bg-gray-900 hover:bg-black")}>
                 {editId ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />} 
-                {editId ? "Simpan Perubahan" : (type === 'transfer' ? "Proses Transfer" : (type === 'debt' ? "Catat Catatan" : "Simpan Transaksi"))}
+                {editId ? "Simpan Perubahan" : (type === 'transfer' ? "Proses Transfer" : "Simpan Transaksi")}
               </button>
             </div>
           </form>
@@ -1028,33 +1038,12 @@ export default function App() {
                       const isExpanded = expandedId === t.id;
                       const dompetAsal = wallets.find(w => w.id === t.walletId);
                       
-                      // Penentuan UI Berdasarkan Tipe
-                      let IconComponent = TrendingDown;
-                      let iconColor = "bg-rose-100 text-rose-600";
-                      let textColor = "text-rose-600";
-                      let sign = "-";
-                      let subTags = [];
-
-                      if (isTransfer) {
-                          IconComponent = ArrowRightLeft; iconColor = "bg-blue-50 text-blue-600"; textColor = "text-gray-700"; sign = "";
-                      } else if (t.type === 'income') {
-                          IconComponent = TrendingUp; iconColor = "bg-emerald-100 text-emerald-600"; textColor = "text-emerald-600"; sign = "+";
-                      } else if (isDebt) {
-                          if (t.debtType === 'lend') {
-                              IconComponent = ArrowUpRight; iconColor = "bg-amber-100 text-amber-600"; textColor = "text-gray-700"; sign = "-";
-                              subTags = [{label: 'Beri Pinjaman', style: 'bg-amber-50 text-amber-600 border border-amber-100 font-bold'}];
-                          } else {
-                              IconComponent = ArrowDownLeft; iconColor = "bg-amber-100 text-amber-600"; textColor = "text-gray-700"; sign = "+";
-                              subTags = [{label: 'Meminjam', style: 'bg-amber-50 text-amber-600 border border-amber-100 font-bold'}];
-                          }
-                      }
-
                       return (
                       <div key={t.id} className="group bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all overflow-hidden relative">
                         <div className="p-4 flex items-center justify-between">
                             <div className="flex items-center gap-4 w-2/3">
-                              <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${iconColor}`}>
-                                 <IconComponent className="w-5 h-5" />
+                              <div className={"w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 " + (isTransfer ? "bg-blue-50 text-blue-600" : isDebt ? "bg-orange-50 text-orange-600" : (t.type === 'income' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"))}>
+                                 {isTransfer ? <ArrowRightLeft className="w-4 h-4" /> : isDebt ? <HandCoins className="w-4 h-4" /> : (t.type === 'income' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />)}
                               </div>
                               <div className="min-w-0">
                                 <h4 className="font-semibold text-gray-800 text-sm truncate">{t.description}</h4>
@@ -1062,7 +1051,7 @@ export default function App() {
                                   {isTransfer ? (
                                       <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded font-bold">Transfer</span>
                                   ) : isDebt ? (
-                                      subTags.map(st => <span key={t.id+st.label} className={`text-[9px] px-1.5 py-0.5 rounded ${st.style}`}>{st.label}</span>)
+                                      <span className={"text-[9px] px-1.5 py-0.5 border rounded font-bold " + (t.status === 'paid' ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-orange-50 text-orange-600 border-orange-100")}>{t.status === 'paid' ? 'Lunas' : 'Belum Lunas'}</span>
                                   ) : (
                                     (t.categories || (t.category ? [t.category] : ['Umum'])).map(catLabel => (
                                         <span key={t.id + "-" + catLabel} className="text-[9px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">{catLabel}</span>
@@ -1073,8 +1062,8 @@ export default function App() {
                               </div>
                             </div>
                             <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                              <span className={`font-bold text-sm ${textColor}`}>
-                                 {sign}{formatCurrency(t.amount, t.currency)}
+                              <span className={"font-bold text-sm " + (isTransfer ? "text-gray-700" : isDebt ? (t.debtType === 'lend' ? "text-rose-600" : "text-emerald-600") : (t.type === 'income' ? "text-emerald-600" : "text-rose-600"))}>
+                                 {isTransfer ? "" : isDebt ? (t.debtType === 'lend' ? "-" : "+") : (t.type === 'income' ? "+" : "-")}{formatCurrency(t.amount, t.currency)}
                               </span>
                               <div className="flex items-center gap-2 mt-1">
                                   {hasItems && !isTransfer && !isDebt && (
@@ -1082,13 +1071,12 @@ export default function App() {
                                           Nota {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                                       </button>
                                   )}
-                                  <button onClick={() => handleEditClick(t)} className="text-gray-300 hover:text-blue-500 transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>
+                                  {!t.isSettlement && <button onClick={() => handleEditClick(t)} className="text-gray-300 hover:text-blue-500 transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>}
                                   <button onClick={() => handleDelete(t.id)} className="text-gray-300 hover:text-rose-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                               </div>
                             </div>
                         </div>
                         
-                        {/* Rincian Nota */}
                         {hasItems && !isTransfer && !isDebt && isExpanded && (
                             <div className="bg-blue-50/30 border-t border-gray-100 p-4 animate-in slide-in-from-top-2">
                                 <div className="flex justify-between items-center mb-2">
@@ -1111,7 +1099,6 @@ export default function App() {
                             </div>
                         )}
                         
-                        {/* Info Transfer */}
                         {isTransfer && isExpanded && (
                             <div className="bg-gray-50 border-t border-gray-100 p-4 animate-in slide-in-from-top-2 text-xs">
                                 <p className="mb-1"><span className="text-gray-500">Tujuan:</span> <b>{wallets.find(w=>w.id === t.toWalletId)?.name || '?'}</b></p>
@@ -1119,23 +1106,12 @@ export default function App() {
                                 {t.adminFee > 0 && <p className="text-rose-500"><span className="text-gray-500">Biaya Admin:</span> -{formatCurrency(t.adminFee, t.currency)}</p>}
                             </div>
                         )}
-                        {(isTransfer || isDebt) && !isExpanded && (
+                        {isTransfer && !isExpanded && (
                              <button onClick={() => toggleExpand(t.id)} className="absolute bottom-1 right-1/2 translate-x-1/2 text-[9px] text-gray-400 bg-white px-2 rounded-t border border-b-0 border-gray-100"><ChevronDown className="w-3 h-3" /></button>
                         )}
-                        {(isTransfer || isDebt) && isExpanded && (
+                        {isTransfer && isExpanded && (
                              <button onClick={() => toggleExpand(t.id)} className="w-full bg-gray-100 text-center py-0.5 text-gray-400 hover:bg-gray-200"><ChevronUp className="w-3 h-3 mx-auto" /></button>
                         )}
-
-                        {/* Info Utang */}
-                        {isDebt && isExpanded && (
-                            <div className="bg-amber-50/30 border-t border-amber-100 p-4 animate-in slide-in-from-top-2 text-xs">
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-amber-800 font-medium">Status: <b className="uppercase bg-amber-100 text-amber-800 px-2 py-0.5 rounded text-[10px]">Belum Lunas</b></span>
-                                    {t.dueDate && <span className="text-gray-500 flex items-center gap-1"><CalendarDays className="w-3 h-3"/> Jatuh tempo: {new Date(t.dueDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'short'})}</span>}
-                                </div>
-                            </div>
-                        )}
-
                       </div>
                     )})}
                   </div>
@@ -1150,6 +1126,9 @@ export default function App() {
 
   const filteredByPeriod = useMemo(() => {
     return transactions.filter(t => {
+      // Hapus filter ini jika mau utang/piutang masuk laporan
+      if (t.type === 'debt') return false; 
+      
       const tDate = new Date(t.transactionDate || t.createdAt);
       
       if (reportType === 'daily') {
@@ -1177,7 +1156,6 @@ export default function App() {
     const stats = {}; let totalExpense = 0;
     
     reportTransactions.forEach(t => {
-      // PERHATIKAN: t.type === 'debt' TIDAK MASUK KESINI, agar tidak mengotori grafik pengeluaran
       if (t.type === 'expense') { 
         if (t.items && t.items.length > 0) {
             let itemsTotal = 0;
@@ -1221,64 +1199,6 @@ export default function App() {
     return { income: inc, expense: exp, balance: inc - exp };
   }, [reportTransactions]);
 
-  const transactionsByCategory = useMemo(() => {
-    const grouped = {};
-    reportTransactions.forEach(t => {
-        if (t.type === 'expense') {
-            if (t.items && t.items.length > 0) {
-                let itemsTotal = 0;
-                t.items.forEach(item => {
-                    const itemPrice = parseFloat(item.price) || 0;
-                    const itemCat = item.category || (t.categories && t.categories.length > 0 ? t.categories[0] : (t.category || 'Umum'));
-                    if (!grouped[itemCat]) grouped[itemCat] = [];
-                    grouped[itemCat].push({ name: item.name, price: itemPrice, isItem: true, date: t.date, parentDesc: t.description });
-                    itemsTotal += itemPrice;
-                });
-                const diff = parseFloat(t.amount) - itemsTotal;
-                if (diff > 0) {
-                    const primaryCat = (t.categories && t.categories.length > 0) ? t.categories[0] : (t.category || 'Umum');
-                    if (!grouped[primaryCat]) grouped[primaryCat] = [];
-                    grouped[primaryCat].push({ name: 'Lainnya (Struk Utama)', price: diff, isItem: false, date: t.date });
-                }
-            } else {
-                const primaryCat = (t.categories && t.categories.length > 0) ? t.categories[0] : (t.category || 'Umum');
-                if (!grouped[primaryCat]) grouped[primaryCat] = [];
-                grouped[primaryCat].push({ name: t.description, price: parseFloat(t.amount), isItem: false, date: t.date });
-            }
-        } else if (t.type === 'transfer' && t.adminFee > 0) {
-            if (!grouped['Biaya Admin']) grouped['Biaya Admin'] = [];
-            grouped['Biaya Admin'].push({ name: 'Biaya Admin Transfer', price: parseFloat(t.adminFee), isItem: false, date: t.date });
-        }
-    });
-    return grouped;
-  }, [reportTransactions]);
-
-  const incomeTransactions = useMemo(() => reportTransactions.filter(t => t.type === 'income'), [reportTransactions]);
-
-  const getInsight = () => {
-    if (categoryStats.length === 0 && incomeTransactions.length === 0) return "Belum ada aktivitas di periode ini. Yuk mulai catat keuanganmu!";
-    if (reportSummary.expense > reportSummary.income && reportSummary.income > 0) return "⚠️ Pengeluaranmu melebihi pemasukan bulan ini. Hati-hati overbudget!";
-    if (categoryStats.length > 0) {
-        const topExpense = categoryStats[0];
-        if (topExpense.percentage > 50) return `💡 Hati-hati, lebih dari setengah uangmu habis untuk ${topExpense.name} (${Math.round(topExpense.percentage)}%).`;
-        return `💡 Pengeluaran terbesarmu saat ini ada di kategori ${topExpense.name} (${Math.round(topExpense.percentage)}%).`;
-    }
-    if (reportSummary.income > reportSummary.expense) return "🎉 Keren! Pemasukanmu lebih besar dari pengeluaran. Jangan lupa ditabung ya!";
-    return "Terus catat pengeluaranmu agar keuangan tetap sehat.";
-  };
-
-  const generateConicGradient = () => {
-    let currentAngle = 0;
-    const gradients = categoryStats.map((cat, i) => {
-        const angle = (cat.percentage / 100) * 360;
-        const color = CHART_COLORS[i % CHART_COLORS.length];
-        const str = `${color} ${currentAngle}deg ${currentAngle + angle}deg`;
-        currentAngle += angle;
-        return str;
-    });
-    return `conic-gradient(${gradients.join(', ')})`;
-  };
-
   const changeReportPeriod = (increment) => {
     const newDate = new Date(reportDate);
     if (reportType === 'yearly') newDate.setFullYear(newDate.getFullYear() + increment);
@@ -1302,415 +1222,152 @@ export default function App() {
     return '';
   };
 
+  // KOMPONEN RENDER LAPORAN (DESIGN ULTIMATE)
   const renderReportView = () => (
-    <div className="animate-in fade-in duration-300 pb-4">
+    <div className="animate-in fade-in duration-300">
       
-      {/* Filter Waktu Model Pill */}
-      <div className="flex bg-gray-200/60 p-1.5 rounded-full mb-6 gap-1 shadow-inner border border-gray-200/50">
-        <button onClick={() => setReportType('daily')} className={`flex-1 py-2 text-[10px] md:text-xs font-bold rounded-full transition-all duration-300 ${reportType === 'daily' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>Harian</button>
-        <button onClick={() => setReportType('weekly')} className={`flex-1 py-2 text-[10px] md:text-xs font-bold rounded-full transition-all duration-300 ${reportType === 'weekly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>Mingguan</button>
-        <button onClick={() => setReportType('monthly')} className={`flex-1 py-2 text-[10px] md:text-xs font-bold rounded-full transition-all duration-300 ${reportType === 'monthly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>Bulanan</button>
-        <button onClick={() => setReportType('yearly')} className={`flex-1 py-2 text-[10px] md:text-xs font-bold rounded-full transition-all duration-300 ${reportType === 'yearly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>Tahunan</button>
+      {/* 1. FILTER PILL */}
+      <div className="bg-white rounded-full shadow-sm border border-gray-100 p-1 mb-6 mx-auto w-max max-w-full flex">
+          <button onClick={() => setReportType('daily')} className={"px-4 py-1.5 text-xs font-bold rounded-full transition-all " + (reportType === 'daily' ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}>Harian</button>
+          <button onClick={() => setReportType('weekly')} className={"px-4 py-1.5 text-xs font-bold rounded-full transition-all " + (reportType === 'weekly' ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}>Mingguan</button>
+          <button onClick={() => setReportType('monthly')} className={"px-4 py-1.5 text-xs font-bold rounded-full transition-all " + (reportType === 'monthly' ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}>Bulanan</button>
       </div>
       
-      {/* Pilih Mata Uang */}
-      <div className="flex justify-center mb-5">
-        <div className="flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-xl border border-gray-200 shadow-sm">
-          <span className="text-xs font-medium text-gray-500">Mata Uang:</span>
-          <select value={reportCurrency} onChange={(e) => setReportCurrency(e.target.value)} className="bg-transparent text-sm font-bold text-indigo-600 focus:outline-none cursor-pointer">
-            {[...new Set(transactions.map(t => t.currency || defaultCurrency))].map(c => <option key={c} value={c}>{c}</option>)}
-            {transactions.length === 0 && <option value={defaultCurrency}>{defaultCurrency}</option>}
-          </select>
+      {/* 2. KARTU KESEHATAN FINANSIAL */}
+      <div className="bg-gradient-to-br from-indigo-600 via-blue-600 to-blue-800 rounded-3xl shadow-xl p-6 mb-6 text-white relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+            <TrendingUp className="w-32 h-32" />
+        </div>
+        <div className="flex items-center justify-between mb-4 relative z-10">
+          <button onClick={() => changeReportPeriod(-1)} className="p-1 hover:bg-white/20 rounded-full transition-colors"><ChevronLeft className="w-5 h-5 text-blue-100" /></button>
+          <div className="text-center bg-white/10 backdrop-blur-md px-3 py-1 rounded-full"><h2 className="font-bold text-white text-xs">{getReportTitle()}</h2></div>
+          <button onClick={() => changeReportPeriod(1)} className="p-1 hover:bg-white/20 rounded-full transition-colors"><ChevronRight className="w-5 h-5 text-blue-100" /></button>
+        </div>
+        
+        <div className="text-center mb-6 relative z-10">
+          <p className="text-blue-200 text-xs font-medium mb-1">Arus Kas Bersih (Sisa Uang)</p>
+          <h3 className="text-3xl font-bold tracking-tight">
+             {reportSummary.balance >= 0 ? "+" : ""}{formatCurrency(reportSummary.balance, reportCurrency)}
+          </h3>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 relative z-10 border-t border-white/20 pt-4">
+            <div>
+                <p className="text-[10px] text-blue-200 flex items-center gap-1 mb-1"><TrendingUp className="w-3 h-3 text-emerald-400"/> Pemasukan</p>
+                <p className="font-bold text-sm">{formatCurrency(reportSummary.income, reportCurrency)}</p>
+            </div>
+            <div>
+                <p className="text-[10px] text-blue-200 flex items-center gap-1 mb-1"><TrendingDown className="w-3 h-3 text-rose-400"/> Pengeluaran</p>
+                <p className="font-bold text-sm">{formatCurrency(reportSummary.expense, reportCurrency)}</p>
+            </div>
         </div>
       </div>
+        
+      {/* 3. GRAFIK DONAT VISUAL */}
+      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div className="flex justify-between items-center mb-6">
+            <h3 className="font-bold text-gray-800 flex items-center gap-2"><PieChart className="w-4 h-4 text-blue-600" /> Distribusi Pengeluaran</h3>
+            <select value={reportCurrency} onChange={(e) => setReportCurrency(e.target.value)} className="bg-gray-50 text-xs font-bold text-blue-600 focus:outline-none border border-gray-200 rounded px-2 py-1">
+              {[...new Set(transactions.map(t => t.currency || defaultCurrency))].map(c => <option key={c} value={c}>{c}</option>)}
+              {transactions.length === 0 && <option value={defaultCurrency}>{defaultCurrency}</option>}
+            </select>
+        </div>
 
-      {/* Navigasi Tanggal */}
-      <div className="flex items-center justify-between mb-6 px-2">
-        <button onClick={() => changeReportPeriod(-1)} className="p-2.5 hover:bg-gray-100 rounded-full transition-colors bg-white shadow-sm border border-gray-100"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
-        <div className="text-center"><h2 className="font-bold text-gray-900 text-base">{getReportTitle()}</h2></div>
-        <button onClick={() => changeReportPeriod(1)} className="p-2.5 hover:bg-gray-100 rounded-full transition-colors bg-white shadow-sm border border-gray-100"><ChevronRight className="w-5 h-5 text-gray-600" /></button>
-      </div>
-      
-      {/* Health Card Premium */}
-      <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-[2rem] p-6 shadow-xl shadow-indigo-200 mb-8 text-white relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none"><Sparkles className="w-32 h-32" /></div>
-          
-          <div className="relative z-10 text-center mb-6">
-              <p className="text-indigo-100 text-[11px] font-bold uppercase tracking-wider mb-1">Arus Kas Bersih (Sisa Uang)</p>
-              <p className="text-4xl font-extrabold tracking-tight">
-                 {reportSummary.balance >= 0 ? "+" : ""}{formatCurrency(reportSummary.balance, reportCurrency)}
-              </p>
+        {categoryStats.length === 0 ? (
+            <div className="text-center py-8 text-gray-400 text-sm">Belum ada pengeluaran di periode ini.</div> 
+        ) : (
+          <div className="flex flex-col items-center">
+            {/* Donut Chart CSS Implementation */}
+            <div className="relative w-40 h-40 rounded-full flex items-center justify-center mb-6 shadow-inner" style={{ 
+                background: `conic-gradient(${categoryStats.map((cat, i) => {
+                    const colors = ['#3b82f6', '#ef4444', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899', '#64748b'];
+                    const start = i === 0 ? 0 : categoryStats.slice(0, i).reduce((sum, c) => sum + c.percentage, 0);
+                    return `${colors[i % colors.length]} ${start}% ${start + cat.percentage}%`;
+                }).join(', ')})`
+            }}>
+                <div className="w-28 h-28 bg-white rounded-full flex flex-col items-center justify-center shadow-sm">
+                    <p className="text-[9px] text-gray-400 font-bold uppercase">Total</p>
+                    <p className="text-xs font-bold text-gray-800">{formatCurrency(reportSummary.expense, reportCurrency).split(',')[0]}</p>
+                </div>
+            </div>
+
+            {/* AI Insight Box */}
+            <div className="w-full bg-purple-50 border border-purple-100 rounded-xl p-4 mb-4 flex gap-3">
+                <Sparkles className="w-5 h-5 text-purple-500 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-purple-800 font-medium leading-relaxed">
+                    💡 Insight: Pengeluaran terbesarmu habis untuk <b>{categoryStats[0].name}</b> ({Math.round(categoryStats[0].percentage)}%). 
+                    {reportSummary.balance < 0 ? " Awas, pengeluaranmu lebih besar dari pemasukan!" : " Pertahankan kebiasaan hematmu!"}
+                </p>
+            </div>
+            
+            {/* Kategori Legenda & Akordeon */}
+            <div className="w-full space-y-2">
+              {categoryStats.map((cat, i) => {
+                  const colors = ['bg-blue-500', 'bg-rose-500', 'bg-orange-500', 'bg-emerald-500', 'bg-purple-500', 'bg-pink-500', 'bg-slate-500'];
+                  const isExpanded = expandedId === 'cat-' + cat.name;
+                  
+                  // Filter transaksi yang termasuk di kategori ini
+                  const catTransactions = reportTransactions.filter(t => {
+                      if(t.type !== 'expense') return false;
+                      if(t.items && t.items.length > 0) return t.items.some(item => (item.category || (t.categories && t.categories.length > 0 ? t.categories[0] : (t.category || 'Umum'))) === cat.name);
+                      return ((t.categories && t.categories.length > 0 ? t.categories[0] : (t.category || 'Umum')) === cat.name);
+                  });
+
+                  return (
+                  <div key={cat.name} className="border border-gray-100 rounded-xl overflow-hidden bg-white">
+                      <button onClick={() => setExpandedId(isExpanded ? null : 'cat-' + cat.name)} className="w-full flex items-center justify-between p-3 hover:bg-gray-50 transition-colors">
+                          <div className="flex items-center gap-3">
+                              <div className={`w-3 h-3 rounded-full ${colors[i % colors.length]}`}></div>
+                              <span className="text-sm font-bold text-gray-700">{cat.name}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                              <span className="text-sm font-bold text-gray-900">{formatCurrency(cat.amount, reportCurrency)}</span>
+                              {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400"/> : <ChevronDown className="w-4 h-4 text-gray-400"/>}
+                          </div>
+                      </button>
+                      
+                      {isExpanded && (
+                          <div className="bg-gray-50 p-3 border-t border-gray-100">
+                              <ul className="space-y-2">
+                                  {catTransactions.map(t => (
+                                      <li key={"catrep-"+t.id} className="flex justify-between items-center text-xs">
+                                          <span className="text-gray-600 truncate mr-2">{t.description}</span>
+                                          <span className="font-semibold text-gray-800 flex-shrink-0">{formatCurrency(t.amount, t.currency)}</span>
+                                      </li>
+                                  ))}
+                              </ul>
+                          </div>
+                      )}
+                  </div>
+              )})}
+            </div>
           </div>
-          
-          <div className="grid grid-cols-2 gap-4 relative z-10">
-              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 flex flex-col items-center text-center">
-                  <div className="bg-emerald-400/20 p-1.5 rounded-full mb-2"><TrendingUp className="w-4 h-4 text-emerald-300"/></div>
-                  <p className="text-[10px] text-indigo-100 mb-0.5">Pemasukan</p>
-                  <p className="font-bold text-[13px]">{formatCurrency(reportSummary.income, reportCurrency)}</p>
-              </div>
-              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 flex flex-col items-center text-center">
-                  <div className="bg-rose-400/20 p-1.5 rounded-full mb-2"><TrendingDown className="w-4 h-4 text-rose-300"/></div>
-                  <p className="text-[10px] text-indigo-100 mb-0.5">Pengeluaran</p>
-                  <p className="font-bold text-[13px]">{formatCurrency(reportSummary.expense, reportCurrency)}</p>
-              </div>
-          </div>
+        )}
       </div>
-      
-      {/* Grafik Donat & Insight */}
-      <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 p-6 mb-6 relative overflow-hidden">
-         <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><PieChart className="w-5 h-5 text-purple-500" /> Distribusi Pengeluaran</h3>
-         
-         {categoryStats.length === 0 ? (
-             <div className="text-center py-10 text-gray-400 text-sm bg-gray-50 rounded-2xl border border-dashed border-gray-200">Belum ada pengeluaran yang dicatat.</div>
-         ) : (
-             <div className="flex flex-col items-center">
-                 {/* CSS Based Donut Chart (Super Ringan) */}
-                 <div className="relative w-48 h-48 mb-6 drop-shadow-md transition-all duration-500">
-                     <div className="w-full h-full rounded-full" style={{ background: generateConicGradient() }}></div>
-                     {/* Lubang Tengah Donat */}
-                     <div className="absolute inset-0 m-auto w-[120px] h-[120px] bg-white rounded-full flex flex-col items-center justify-center shadow-inner">
-                         <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total</span>
-                         <span className="text-sm font-black text-gray-900 mt-0.5">{formatCurrency(reportSummary.expense, reportCurrency)}</span>
-                     </div>
-                 </div>
-                 
-                 {/* Legenda Kategori */}
-                 <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 w-full border-t border-gray-50 pt-5">
-                     {categoryStats.map((cat, i) => (
-                         <div key={cat.name} className="flex items-center gap-1.5">
-                             <div className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}></div>
-                             <span className="text-[11px] font-semibold text-gray-600">{cat.name} <span className="text-gray-400 font-normal">({Math.round(cat.percentage)}%)</span></span>
-                         </div>
-                     ))}
-                 </div>
-             </div>
-         )}
-
-         {/* Banner AI Insight */}
-         <div className="mt-6 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-100/50 p-4 rounded-2xl flex gap-3 shadow-sm">
-             <div className="bg-white p-2 rounded-full h-fit flex-shrink-0 shadow-sm border border-purple-100"><Sparkles className="w-4 h-4 text-purple-600" /></div>
-             <p className="text-xs text-indigo-900/80 leading-relaxed font-semibold self-center">{getInsight()}</p>
-         </div>
-      </div>
-
-      {/* Rincian per Kategori (Accordion) */}
-      <div className="mb-6">
-         <h3 className="font-bold text-gray-800 mb-4 px-1 flex items-center gap-2"><List className="w-5 h-5 text-gray-500" /> Rincian per Kategori</h3>
-         {categoryStats.length === 0 ? (
-             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center text-gray-400 text-sm">Tidak ada rincian.</div>
-         ) : (
-             <div className="space-y-3">
-                 {categoryStats.map((cat, i) => {
-                     const isExpanded = expandedCategory === cat.name;
-                     const items = transactionsByCategory[cat.name] || [];
-                     const color = CHART_COLORS[i % CHART_COLORS.length];
-                     
-                     return (
-                         <div key={cat.name} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden transition-all duration-300">
-                             <div 
-                               onClick={() => setExpandedCategory(isExpanded ? null : cat.name)}
-                               className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50"
-                             >
-                                 <div className="flex items-center gap-3">
-                                     <div className="w-2.5 h-10 rounded-full" style={{ backgroundColor: color }}></div>
-                                     <div>
-                                         <h4 className="font-bold text-gray-800 text-sm">{cat.name}</h4>
-                                         <p className="text-[10px] text-gray-400 font-medium mt-0.5">{items.length} item transaksi</p>
-                                     </div>
-                                 </div>
-                                 <div className="flex items-center gap-3">
-                                     <span className="font-bold text-gray-900 text-sm">{formatCurrency(cat.amount, reportCurrency)}</span>
-                                     <div className={`p-1.5 rounded-full transition-colors ${isExpanded ? 'bg-gray-200' : 'bg-gray-100'}`}>
-                                        {isExpanded ? <ChevronUp className="w-3 h-3 text-gray-600"/> : <ChevronDown className="w-3 h-3 text-gray-600"/>}
-                                     </div>
-                                 </div>
-                             </div>
-                             
-                             {isExpanded && (
-                                 <div className="bg-gray-50/50 px-4 pb-4 pt-2 border-t border-gray-100 animate-in slide-in-from-top-2 duration-300">
-                                     <ul className="space-y-2 mt-2">
-                                         {items.map((item, idx) => (
-                                             <li key={idx} className="flex justify-between items-start border-b border-gray-200/50 pb-2 last:border-0 last:pb-0">
-                                                 <div className="flex flex-col pr-4">
-                                                     <span className="text-xs font-semibold text-gray-700">{item.name}</span>
-                                                     <span className="text-[9px] text-gray-400 mt-1 font-medium">{item.date} {item.isItem ? `• Struk: ${item.parentDesc}` : ''}</span>
-                                                 </div>
-                                                 <span className="text-xs font-bold text-gray-800 flex-shrink-0">{formatCurrency(item.price, reportCurrency)}</span>
-                                             </li>
-                                         ))}
-                                     </ul>
-                                 </div>
-                             )}
-                         </div>
-                     );
-                 })}
-             </div>
-         )}
-      </div>
-
-      {/* Riwayat Pemasukan */}
-      {incomeTransactions.length > 0 && (
-          <div className="mb-8">
-             <h3 className="font-bold text-gray-800 mb-4 px-1 flex items-center gap-2"><TrendingUp className="w-5 h-5 text-emerald-500" /> Riwayat Pemasukan</h3>
-             <div className="space-y-3">
-                 {incomeTransactions.map(t => (
-                     <div key={"inc-"+t.id} className="bg-white rounded-2xl shadow-sm border border-emerald-100 p-4 flex justify-between items-center">
-                         <div className="flex items-center gap-3">
-                             <div className="bg-emerald-100 p-2 rounded-full text-emerald-600"><TrendingUp className="w-4 h-4"/></div>
-                             <div>
-                                 <p className="font-bold text-gray-800 text-sm">{t.description}</p>
-                                 <p className="text-[10px] text-gray-400 font-medium mt-0.5">{t.date} • {t.category || t.categories?.[0]}</p>
-                             </div>
-                         </div>
-                         <span className="font-bold text-emerald-600 text-sm">+{formatCurrency(t.amount, t.currency)}</span>
-                     </div>
-                 ))}
-             </div>
-          </div>
-      )}
-
     </div>
   );
-
-  const downloadCSV = () => {
-    if (transactions.length === 0) { setNotification({ type: 'error', message: 'Tidak ada data.' }); return; }
-    const headers = "iso_date,tanggal_display,deskripsi,kategori,tipe,mata_uang,jumlah,dompet_asal,dompet_tujuan,biaya_admin,rincian_item,url_struk";
-    const csvRows = [headers];
-    
-    transactions.forEach(t => {
-      const dateObj = new Date(t.transactionDate || t.createdAt);
-      const isoDate = dateObj.toISOString().split('T')[0];
-      const catString = t.categories ? t.categories.join(' & ') : (t.category || 'Umum');
-      const cleanDesc = t.description.split('"').join('""');
-      
-      let itemsString = "";
-      if (t.items && t.items.length > 0) {
-          itemsString = t.items.map(i => {
-              const cleanName = (i.name || '').split('"').join('""');
-              return cleanName + "::" + (i.price || 0) + "::" + (i.category || '');
-          }).join("||");
-      }
-      
-      const row = isoDate + "," + 
-                  '"' + t.date + '",' + 
-                  '"' + cleanDesc + '",' + 
-                  '"' + catString + '",' + 
-                  t.type + "," + 
-                  (t.currency || 'IDR') + "," + 
-                  t.amount + "," +
-                  (t.walletId || '') + "," +
-                  (t.toWalletId || '') + "," +
-                  (t.adminFee || 0) + "," +
-                  '"' + itemsString + '",' +
-                  '"' + (t.receiptUrl || '') + '"';
-      csvRows.push(row);
-    });
-    
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'Backup_Dompetku_V4_Full.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleImportClick = () => fileInputRef.current?.click();
-
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const rows = event.target.result.split('\n');
-        let importedCount = 0;
-        setLoading(true); setSyncStatus('saving');
-        
-        for (let i = 1; i < rows.length; i++) {
-          const rowText = rows[i].trim();
-          if (!rowText) continue;
-          
-          const cols = []; let cur = ''; let inQuote = false;
-          for (let j = 0; j < rowText.length; j++) {
-              const char = rowText[j];
-              if (char === '"' && rowText[j+1] === '"') { cur += '""'; j++; } 
-              else if (char === '"') { inQuote = !inQuote; } 
-              else if (char === ',' && !inQuote) { cols.push(cur); cur = ''; } 
-              else { cur += char; }
-          }
-          cols.push(cur);
-
-          if (cols && cols.length >= 6) {
-            const clean = (str) => {
-                if(!str) return '';
-                let s = str.trim();
-                if(s.startsWith('"') && s.endsWith('"')) s = s.substring(1, s.length - 1);
-                return s.split('""').join('"');
-            };
-            
-            const isoDate = clean(cols[0]);
-            const description = clean(cols[2]);
-            const categoryRaw = clean(cols[3]);
-            const typeRaw = clean(cols[4]);
-            const type = typeRaw.includes('income') ? 'income' : (typeRaw.includes('transfer') ? 'transfer' : 'expense');
-            const catsArray = categoryRaw.split(' & ').map(c => c.trim()).filter(Boolean);
-
-            let curr = 'IDR'; let amt = 0; 
-            let wId = wallets[0]?.id || ''; let toWId = ''; let aFee = 0; let parsedItems = []; let recUrl = null;
-
-            if (cols.length >= 12) {
-                curr = clean(cols[5]); amt = parseFloat(clean(cols[6]));
-                wId = clean(cols[7]) || wId;
-                toWId = clean(cols[8]);
-                aFee = parseFloat(clean(cols[9]) || 0);
-                const itemsRaw = clean(cols[10]);
-                if (itemsRaw) parsedItems = itemsRaw.split('||').map(itemStr => { 
-                    const parts = itemStr.split('::'); 
-                    return { name: parts[0] || 'Item', price: parseFloat(parts[1]) || 0, category: parts[2] || '' }; 
-                });
-                recUrl = clean(cols[11]);
-            } else if (cols.length >= 11) {
-                curr = clean(cols[5]); amt = parseFloat(clean(cols[6]));
-                wId = clean(cols[7]) || wId;
-                toWId = clean(cols[8]);
-                aFee = parseFloat(clean(cols[9]) || 0);
-                const itemsRaw = clean(cols[10]);
-                if (itemsRaw) parsedItems = itemsRaw.split('||').map(itemStr => { 
-                    const parts = itemStr.split('::'); 
-                    return { name: parts[0] || 'Item', price: parseFloat(parts[1]) || 0, category: parts[2] || '' }; 
-                });
-            } else if (cols.length >= 8) {
-                curr = clean(cols[5]); amt = parseFloat(clean(cols[6]));
-                const itemsRaw = clean(cols[7]);
-                if (itemsRaw) parsedItems = itemsRaw.split('||').map(itemStr => { 
-                    const parts = itemStr.split('::'); 
-                    return { name: parts[0] || 'Item', price: parseFloat(parts[1]) || 0, category: parts[2] || '' }; 
-                });
-            } else if (cols.length === 7) { curr = clean(cols[5]); amt = parseFloat(clean(cols[6])); } 
-            else { amt = parseFloat(clean(cols[5])); }
-            
-            if (isoDate && description && !isNaN(amt)) {
-              const dateObj = new Date(isoDate);
-              await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), {
-                description, amount: amt, type,
-                categories: catsArray.length > 0 ? catsArray : ['Umum'],
-                category: catsArray[0] || 'Umum',
-                currency: curr, walletId: wId, toWalletId: toWId, adminFee: aFee, items: parsedItems,
-                receiptUrl: recUrl,
-                date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
-                transactionDate: dateObj.getTime(), createdAt: Date.now()
-              });
-              importedCount++;
-            }
-          }
-        }
-        setLoading(false); setNotification({ type: 'success', message: 'Berhasil mengimpor ' + importedCount + ' transaksi.' });
-        e.target.value = null;
-      } catch (error) {
-        setLoading(false); setNotification({ type: 'error', message: 'Gagal import file CSV.' });
-      } finally { setSyncStatus('synced'); }
-    };
-    reader.readAsText(file);
-  };
-
-  const handleResetData = async () => {
-    if (!user) return;
-    setLoading(true); setSyncStatus('saving'); setShowResetModal(false);
-    try {
-      const batch = writeBatch(db);
-      const transSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'));
-      transSnapshot.forEach((doc) => batch.delete(doc.ref));
-      const catSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'categories'));
-      catSnapshot.forEach((doc) => batch.delete(doc.ref));
-      const walSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'wallets'));
-      walSnapshot.forEach((doc) => batch.delete(doc.ref));
-      
-      await batch.commit();
-      setTransactions([]); setCustomCategories([]); setWallets([]);
-      setNotification({ type: 'success', message: 'Semua Data direset bersih.' });
-    } catch (error) {
-      setNotification({ type: 'error', message: 'Gagal mereset.' });
-    } finally { setLoading(false); setSyncStatus('synced'); }
-  };
-
-  const confirmGenerateDummy = async () => {
-    if (!user) return;
-    setShowDummyModal(false); setLoading(true); setSyncStatus('saving');
-    try {
-      const w1 = wallets[0]?.id || '';
-      const w2 = wallets.length > 1 ? wallets[1].id : w1;
-      
-      const isIDR = defaultCurrency === 'IDR';
-      const multiplier = isIDR ? 100 : 1; 
-      const baseSalary = isIDR ? 5000000 : 250000;
-      const curr = defaultCurrency;
-
-      const dummyData = [
-        { desc: 'Gaji Bulanan', amount: baseSalary, type: 'income', cats: ['Gaji'], dayOffset: 6, curr: curr, walletId: w1, items: [] },
-        { desc: 'Belanja Supermarket (TRIAL)', amount: 4500 * multiplier, type: 'expense', cats: ['Belanja', 'Makanan'], dayOffset: 3, curr: curr, walletId: w2, items: [
-            { name: 'Beras 5kg', price: 2000 * multiplier, category: 'Makanan' },
-            { name: 'Telur Ayam 1 Pack', price: 300 * multiplier, category: 'Makanan' },
-            { name: 'Susu Murni 1L', price: 200 * multiplier, category: 'Makanan' },
-            { name: 'Daging Ayam', price: 1000 * multiplier, category: 'Makanan' },
-            { name: 'Sabun & Odol', price: 1000 * multiplier, category: 'Belanja' }
-        ]},
-        { desc: 'Makan Siang (Matsuya/Warteg)', amount: 600 * multiplier, type: 'expense', cats: ['Makanan'], dayOffset: 1, curr: curr, walletId: w2, items: [] },
-        { desc: 'Top-up Kartu Transport', amount: 2000 * multiplier, type: 'expense', cats: ['Transportasi'], dayOffset: 2, curr: curr, walletId: w1, items: [] }
-      ];
-
-      if (wallets.length > 1) {
-          const dompetAsal = wallets[0];
-          const dompetTujuan = wallets[1];
-          dummyData.push({
-              desc: `Tarik Tunai ${dompetAsal.name} ➞ ${dompetTujuan.name}`,
-              amount: 10000 * multiplier,
-              type: 'transfer',
-              cats: [],
-              dayOffset: 4,
-              walletId: dompetAsal.id,
-              toWalletId: dompetTujuan.id,
-              adminFee: 20 * multiplier,
-              receivedAmount: 10000 * multiplier,
-              currency: dompetAsal.currency,
-              targetCurrency: dompetTujuan.currency,
-              items: []
-          });
-      }
-
-      const now = new Date();
-      for (const item of dummyData) {
-        const dateObj = new Date(now); dateObj.setDate(dateObj.getDate() - item.dayOffset);
-        
-        const tData = {
-          description: item.desc, amount: item.amount, type: item.type, 
-          categories: item.cats, category: item.cats[0] || 'Umum', currency: item.currency || item.curr,
-          walletId: item.walletId,
-          items: item.items,
-          date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
-          transactionDate: dateObj.getTime(), createdAt: Date.now()
-        };
-
-        if (item.type === 'transfer') {
-            tData.toWalletId = item.toWalletId;
-            tData.adminFee = item.adminFee;
-            tData.receivedAmount = item.receivedAmount;
-            tData.targetCurrency = item.targetCurrency;
-        }
-
-        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), tData);
-      }
-      setNotification({ type: 'success', message: 'Data demo realistis ditambahkan.' });
-    } catch (error) {
-      setNotification({ type: 'error', message: 'Gagal membuat demo.' });
-    } finally { setLoading(false); setSyncStatus('synced'); }
-  };
 
   const renderSettingsView = () => (
     <div className="animate-in fade-in duration-300">
       <h2 className="text-2xl font-bold text-gray-900 mb-6">Pengaturan</h2>
       
+      {/* MENU BUKU UTANG & PIUTANG (BARU) */}
+      <button onClick={() => setShowDebtModal(true)} className="w-full bg-gradient-to-r from-orange-500 to-rose-500 rounded-2xl shadow-md p-4 mb-6 relative overflow-hidden flex items-center justify-between group hover:shadow-lg transition-all text-left">
+        <div className="absolute top-0 right-0 p-2 opacity-20 pointer-events-none"><HandCoins className="w-20 h-20" /></div>
+        <div className="relative z-10 flex items-center gap-4">
+            <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm"><HandCoins className="w-6 h-6 text-white" /></div>
+            <div>
+                <h3 className="text-white font-bold text-lg">Buku Utang & Piutang</h3>
+                <p className="text-orange-100 text-xs">Pantau utang teman atau pinjamanmu.</p>
+            </div>
+        </div>
+        {activeDebts.length > 0 && (
+            <div className="bg-white text-rose-600 text-xs font-bold px-3 py-1.5 rounded-full shadow-sm relative z-10 flex items-center gap-1">
+               {activeDebts.length} Belum Lunas
+            </div>
+        )}
+      </button>
+
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
         <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Akun Saya</h3>
         <div className="flex items-center justify-between">
@@ -1807,37 +1464,12 @@ export default function App() {
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
-        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Manajemen Data</h3>
-        <div className="space-y-3">
-          <button onClick={downloadCSV} disabled={transactions.length === 0} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 transition-all group">
-            <div className="flex items-center gap-3">
-              <div className="bg-blue-100 p-2 rounded-lg group-hover:bg-blue-200 transition-colors"><Download className="w-5 h-5 text-blue-600" /></div>
-              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Export ke Excel</p><p className="text-xs text-gray-400">Unduh file backup</p></div>
-            </div>
-          </button>
-          <button onClick={handleImportClick} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-200 hover:border-emerald-200 transition-all group">
-             <div className="flex items-center gap-3">
-              <div className="bg-emerald-100 p-2 rounded-lg group-hover:bg-emerald-200 transition-colors"><Upload className="w-5 h-5 text-emerald-600" /></div>
-              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Restore Data</p><p className="text-xs text-gray-400">Kembalikan data dari backup</p></div>
-            </div>
-          </button>
-          <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv" className="hidden" />
-          <button onClick={() => setShowDummyModal(true)} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-purple-50 border border-gray-200 hover:border-purple-200 transition-all group">
-             <div className="flex items-center gap-3">
-              <div className="bg-purple-100 p-2 rounded-lg group-hover:bg-purple-200 transition-colors"><Sparkles className="w-5 h-5 text-purple-600" /></div>
-              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Isi Data Demo</p><p className="text-xs text-gray-400">Buat transaksi contoh otomatis</p></div>
-            </div>
-          </button>
-        </div>
-      </div>
-
       <div className="bg-white rounded-2xl shadow-sm border border-red-100 p-5 mb-6">
         <h3 className="text-sm font-bold text-red-500 uppercase tracking-wider mb-4 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> Zona Bahaya</h3>
         <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data & Dompet</button>
       </div>
       
-      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v4.1 (Debt Tracker Added)</div>
+      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v4.5 (Ultimate Tracker)</div>
     </div>
   );
 
@@ -1869,11 +1501,67 @@ export default function App() {
           </div>
         )}
 
+        {/* MODAL FULLSCREEN PREVIEW GAMBAR STRUK */}
         {previewImage && (
             <div className="fixed inset-0 bg-black/90 z-[90] flex flex-col items-center justify-center p-4 animate-in fade-in zoom-in duration-200">
                 <button onClick={() => setPreviewImage(null)} className="absolute top-6 right-6 p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors"><X className="w-6 h-6" /></button>
                 <img src={previewImage} alt="Preview Struk" className="max-w-full max-h-[80vh] rounded-lg shadow-2xl object-contain border border-white/10" />
             </div>
+        )}
+
+        {/* MODAL BUKU UTANG & PIUTANG */}
+        {showDebtModal && (
+          <div className="fixed inset-0 bg-black/50 z-[80] flex flex-col justify-end md:items-center md:justify-center animate-in slide-in-from-bottom-full md:slide-in-from-bottom-0 md:fade-in duration-300">
+             <div className="bg-gray-50 w-full md:max-w-md h-[85vh] md:h-[80vh] md:rounded-2xl rounded-t-3xl shadow-2xl flex flex-col overflow-hidden">
+                {/* Header Modal */}
+                <div className="bg-white p-4 border-b border-gray-200 flex justify-between items-center z-10 shadow-sm">
+                   <div className="flex items-center gap-2 text-orange-600">
+                       <HandCoins className="w-6 h-6" />
+                       <h3 className="font-bold text-lg text-gray-800">Buku Catatan</h3>
+                   </div>
+                   <button onClick={() => setShowDebtModal(false)} className="p-2 bg-gray-100 rounded-full text-gray-500 hover:text-gray-800 transition-colors"><X className="w-5 h-5" /></button>
+                </div>
+                
+                {/* Tab Selector */}
+                <div className="flex bg-white p-2 border-b border-gray-200 shadow-sm">
+                   <button onClick={() => setActiveDebtTab('lend')} className={"flex-1 py-2 text-sm font-bold rounded-lg transition-all " + (activeDebtTab === 'lend' ? "bg-orange-100 text-orange-700" : "text-gray-500 hover:bg-gray-50")}>Piutang (Uang di Orang)</button>
+                   <button onClick={() => setActiveDebtTab('borrow')} className={"flex-1 py-2 text-sm font-bold rounded-lg transition-all " + (activeDebtTab === 'borrow' ? "bg-orange-100 text-orange-700" : "text-gray-500 hover:bg-gray-50")}>Utang (Pinjaman Saya)</button>
+                </div>
+
+                {/* Content List */}
+                <div className="flex-1 overflow-y-auto p-4">
+                   {activeDebts.filter(d => d.debtType === activeDebtTab).length === 0 ? (
+                       <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-60">
+                           <CheckSquare className="w-16 h-16 mb-4 text-emerald-500" />
+                           <p className="text-center font-medium">Bagus! Tidak ada catatan<br/>yang belum lunas di sini.</p>
+                       </div>
+                   ) : (
+                       <div className="space-y-3">
+                           {activeDebts.filter(d => d.debtType === activeDebtTab).map(debt => (
+                               <div key={"debt-"+debt.id} className="bg-white border border-orange-100 rounded-xl p-4 shadow-sm relative overflow-hidden">
+                                  <div className="absolute top-0 left-0 w-1 h-full bg-orange-400"></div>
+                                  <div className="flex justify-between items-start mb-3">
+                                      <div>
+                                          <h4 className="font-bold text-gray-800 flex items-center gap-1.5"><Users className="w-4 h-4 text-gray-400" /> {debt.personName}</h4>
+                                          <p className="text-[10px] text-gray-400 mt-1">Dicatat: {debt.date}</p>
+                                          {debt.dueDate && <p className="text-[10px] text-rose-500 font-medium">Tenggat: {new Date(debt.dueDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})}</p>}
+                                      </div>
+                                      <span className={"font-bold text-lg " + (activeDebtTab === 'lend' ? "text-emerald-600" : "text-rose-600")}>
+                                          {formatCurrency(debt.amount, debt.currency)}
+                                      </span>
+                                  </div>
+                                  <div className="pt-3 border-t border-gray-100 flex justify-end gap-2">
+                                      <button onClick={() => handleSettleDebt(debt)} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center gap-1">
+                                          <CheckCircle className="w-4 h-4" /> Tandai Lunas
+                                      </button>
+                                  </div>
+                               </div>
+                           ))}
+                       </div>
+                   )}
+                </div>
+             </div>
+          </div>
         )}
 
         {showItemCatModal && (
@@ -1966,7 +1654,7 @@ export default function App() {
                     {customCategories.filter(c => c.type === type).map((c) => (
                       <li key={c.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100 group hover:border-blue-200 transition-colors">
                         <span className="text-sm font-medium text-gray-700">{c.name}</span>
-                        <button onClick={() => handleDeleteCategory(c.id, c.name)} className="text-gray-400 hover:text-rose-500 p-1.5 hover:bg-rose-50 rounded-lg transition-all"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={() => handleDeleteCategory(c.id, c.name)} className="text-gray-400 hover:text-rose-500 p-1.5 hover:bg-rose-50 rounded-lg transition-all"><Trash className="w-4 h-4" /></button>
                       </li>
                     ))}
                   </ul>
@@ -1998,4 +1686,4 @@ export default function App() {
       </div>
     </div>
   );
-}
+                  }
