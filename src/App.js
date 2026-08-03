@@ -81,13 +81,18 @@ export default function App() {
   // Modals & Fitur Baru (Search & Filter)
   const [previewImage, setPreviewImage] = useState(null);
   const [showDebtModal, setShowDebtModal] = useState(false);
-  const [activeDebtTab, setActiveDebtTab] = useState('lend'); // 'lend', 'borrow', 'settled'
+  const [activeDebtTab, setActiveDebtTab] = useState('lend'); 
   
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [showFilterSheet, setShowFilterSheet] = useState(false);
   const [filterType, setFilterType] = useState('all'); 
   const [sortBy, setSortBy] = useState('date_desc'); 
+
+  // Modal Cicilan
+  const [showInstallmentModal, setShowInstallmentModal] = useState(false);
+  const [selectedDebt, setSelectedDebt] = useState(null);
+  const [installmentAmount, setInstallmentAmount] = useState('');
 
   // Filter Wallet untuk Report
   const [reportWalletId, setReportWalletId] = useState('all');
@@ -116,13 +121,11 @@ export default function App() {
   const [items, setItems] = useState([]); 
   const [receiptImageUrl, setReceiptImageUrl] = useState(null); 
   
-  // States Khusus Dompet & Transfer
   const [walletId, setWalletId] = useState(''); 
   const [toWalletId, setToWalletId] = useState('');
   const [receivedAmount, setReceivedAmount] = useState('');
   const [adminFee, setAdminFee] = useState('');
 
-  // States Khusus Utang/Piutang
   const [debtType, setDebtType] = useState('lend'); 
   const [personName, setPersonName] = useState('');
   const [dueDate, setDueDate] = useState('');
@@ -211,6 +214,11 @@ export default function App() {
     const transRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
     const unsubTrans = onSnapshot(transRef, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      data.sort((a, b) => {
+        const dateA = a.transactionDate || a.createdAt;
+        const dateB = b.transactionDate || b.createdAt;
+        return dateB - dateA; 
+      });
       setTransactions(data);
       setLoading(false);
       if (navigator.onLine) setTimeout(() => setSyncStatus('synced'), 800); 
@@ -274,6 +282,7 @@ export default function App() {
                balances[t.toWalletId] += parseFloat(t.receivedAmount || t.amount || 0);
            }
        } else if (t.type === 'debt') {
+           // Untuk Utang/Piutang awal
            if (t.debtType === 'lend') { 
                if(balances[t.walletId] !== undefined) balances[t.walletId] -= parseFloat(t.amount || 0);
            } else if (t.debtType === 'borrow') { 
@@ -306,11 +315,10 @@ export default function App() {
       let totalLend = 0;
       let totalBorrow = 0;
       activeDebts.forEach(d => {
-          // Hanya hitung jika mata uang sama dengan defaultCurrency untuk kesederhanaan ringkasan, 
-          // atau asumsikan semuanya base currency jika multi-currency tidak difilter di dasbor ini.
-          // Untuk amannya, kita hitung semua yang ada.
-          if (d.debtType === 'lend') totalLend += parseFloat(d.amount);
-          if (d.debtType === 'borrow') totalBorrow += parseFloat(d.amount);
+          // Hitung berdasarkan "Sisa Utang" (Amount - paidAmount)
+          const remaining = parseFloat(d.amount) - (parseFloat(d.paidAmount) || 0);
+          if (d.debtType === 'lend') totalLend += remaining;
+          if (d.debtType === 'borrow') totalBorrow += remaining;
       });
       return { totalLend, totalBorrow };
   }, [activeDebts]);
@@ -540,7 +548,6 @@ export default function App() {
   const handleAddTransaction = async (e) => {
     e.preventDefault();
     
-    // VALIDASI KETAT
     if (!walletId) {
         setNotification({ type: 'error', message: 'Pilih Dompet / Sumber Dana terlebih dahulu!' });
         return;
@@ -592,6 +599,7 @@ export default function App() {
           transactionData.personName = personName;
           transactionData.dueDate = dueDate;
           transactionData.status = 'unpaid';
+          transactionData.paidAmount = 0; // Set dibayar 0 awal-awal
           transactionData.description = (debtType === 'lend' ? "Meminjamkan ke: " : "Pinjaman dari: ") + personName;
           transactionData.category = 'Utang/Piutang';
           transactionData.categories = ['Utang/Piutang'];
@@ -615,7 +623,6 @@ export default function App() {
         setNotification({ type: 'success', message: 'Tersimpan.' });
       }
       
-      // Reset Form
       setHomeViewDate(selectedDate); setDescription(''); setAmount(''); setDate(getCurrentDate()); setItems([]);
       setReceivedAmount(''); setAdminFee(''); setReceiptImageUrl(null);
       setPersonName(''); setDueDate('');
@@ -627,59 +634,55 @@ export default function App() {
     }
   };
 
-  const handleSettleDebt = async (debt) => {
-    if (!user) return;
-    setSyncStatus('saving');
-    try {
-        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', debt.id), { 
-            status: 'paid', 
-            paidAt: Date.now() 
-        });
+  // --- FUNGSI CICILAN UTANG (BARU) ---
+  const processInstallment = async () => {
+      if (!user || !selectedDebt) return;
+      const payVal = parseFloat(installmentAmount);
+      if (!payVal || payVal <= 0) {
+          setNotification({ type: 'error', message: 'Nominal tidak valid!' });
+          return;
+      }
 
-        const d = new Date();
-        const tData = {
-            amount: debt.amount,
-            type: debt.debtType === 'lend' ? 'income' : 'expense',
-            walletId: debt.walletId,
-            currency: debt.currency,
-            description: "Pelunasan dari " + debt.personName,
-            category: 'Pelunasan',
-            categories: ['Pelunasan'],
-            date: d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
-            transactionDate: d.getTime(),
-            createdAt: Date.now(),
-            isSettlement: true,
-            settledDebtId: debt.id
-        };
-        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), tData);
-        
-        setNotification({type: 'success', message: 'Utang berhasil dilunasi!'});
-    } catch(e) {
-        console.error(e);
-        setNotification({type: 'error', message: 'Gagal melunasi.'});
-        setSyncStatus('offline');
-    }
-  };
-
-  // Fungsi Undo Pelunasan jika gak sengaja kepencet
-  const handleUndoDebt = async (debt) => {
-      if (!user) return;
       setSyncStatus('saving');
       try {
-          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', debt.id), { 
-              status: 'unpaid', 
-              paidAt: null 
+          const currentPaid = selectedDebt.paidAmount || 0;
+          const newPaid = currentPaid + payVal;
+          const isFullyPaid = newPaid >= selectedDebt.amount;
+
+          // 1. Update data utang dengan paidAmount baru
+          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', selectedDebt.id), { 
+              paidAmount: newPaid,
+              ...(isFullyPaid ? { status: 'paid', paidAt: Date.now() } : {}) 
           });
+
+          // 2. Buat transaksi pelunasan/cicilan agar masuk ke Beranda
+          const d = new Date();
+          const tData = {
+              amount: payVal, // Hanya nominal cicilan
+              type: selectedDebt.debtType === 'lend' ? 'income' : 'expense',
+              walletId: selectedDebt.walletId,
+              currency: selectedDebt.currency,
+              description: `Cicilan/Bayar: ${selectedDebt.personName} ` + (isFullyPaid ? '(Lunas)' : ''),
+              category: 'Pelunasan',
+              categories: ['Pelunasan'],
+              date: d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+              transactionDate: d.getTime(),
+              createdAt: Date.now(),
+              isSettlement: true,
+              settledDebtId: selectedDebt.id
+          };
+          await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), tData);
           
-          // Cari transaksi pelunasan yg berhubungan dan hapus
-          const settlementTrx = transactions.find(t => t.isSettlement && t.settledDebtId === debt.id);
-          if (settlementTrx) {
-              await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', settlementTrx.id));
-          }
-          setNotification({type: 'success', message: 'Pelunasan dibatalkan.'});
-      } catch(e) {
+          setNotification({type: 'success', message: isFullyPaid ? 'Utang lunas sepenuhnya!' : 'Cicilan berhasil dicatat.'});
+          setShowInstallmentModal(false);
+          setSelectedDebt(null);
+          setInstallmentAmount('');
+          
+          // Kalau ini utang terakhir dan udah lunas, tutup modal buku utangnya sekalian (opsional)
+          if (isFullyPaid && activeDebts.length <= 1) setShowDebtModal(false);
+      } catch (e) {
           console.error(e);
-          setNotification({type: 'error', message: 'Gagal membatalkan pelunasan.'});
+          setNotification({type: 'error', message: 'Gagal memproses cicilan.'});
           setSyncStatus('offline');
       }
   };
@@ -1010,7 +1013,7 @@ export default function App() {
                    </div>
                    
                    <div>
-                       <label className="block text-[10px] font-bold text-gray-500 mb-1">NOMINAL {wAsal ? `(${wAsal.currency})` : ''}</label>
+                       <label className="block text-[10px] font-bold text-gray-500 mb-1">TOTAL NOMINAL {wAsal ? `(${wAsal.currency})` : ''}</label>
                        <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500 transition-all font-bold text-gray-800 text-lg" />
                    </div>
 
@@ -1232,7 +1235,6 @@ export default function App() {
 
   const filteredByPeriod = useMemo(() => {
     return transactions.filter(t => {
-      // Hapus filter ini jika mau utang/piutang masuk laporan utama
       if (t.type === 'debt') return false; 
       
       const tDate = new Date(t.transactionDate || t.createdAt);
@@ -1339,14 +1341,12 @@ export default function App() {
   const renderReportView = () => (
     <div className="animate-in fade-in duration-300">
       
-      {/* 1. FILTER PILL WAKTU */}
       <div className="bg-white rounded-full shadow-sm border border-gray-100 p-1 mb-3 mx-auto w-max max-w-full flex">
           <button onClick={() => setReportType('daily')} className={"px-4 py-1.5 text-xs font-bold rounded-full transition-all " + (reportType === 'daily' ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}>Harian</button>
           <button onClick={() => setReportType('weekly')} className={"px-4 py-1.5 text-xs font-bold rounded-full transition-all " + (reportType === 'weekly' ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}>Mingguan</button>
           <button onClick={() => setReportType('monthly')} className={"px-4 py-1.5 text-xs font-bold rounded-full transition-all " + (reportType === 'monthly' ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}>Bulanan</button>
       </div>
       
-      {/* FILTER PILL DOMPET (HORIZONTAL SCROLL) */}
       <div className="flex overflow-x-auto gap-2 mb-6 pb-2 hide-scrollbar px-1">
          <button onClick={() => setReportWalletId('all')} className={"whitespace-nowrap px-4 py-1.5 text-[10px] uppercase tracking-wider font-bold rounded-full border transition-all " + (reportWalletId === 'all' ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>Semua Dompet</button>
          {wallets.map(w => (
@@ -1354,7 +1354,6 @@ export default function App() {
          ))}
       </div>
       
-      {/* 2. KARTU KESEHATAN FINANSIAL */}
       <div className="bg-gradient-to-br from-indigo-600 via-blue-600 to-blue-800 rounded-3xl shadow-xl p-6 mb-6 text-white relative overflow-hidden">
         <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
             <TrendingUp className="w-32 h-32" />
@@ -1384,7 +1383,6 @@ export default function App() {
         </div>
       </div>
         
-      {/* 3. GRAFIK DONAT VISUAL */}
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 mb-6">
         <div className="flex justify-between items-center mb-6">
             <h3 className="font-bold text-gray-800 flex items-center gap-2"><PieChart className="w-4 h-4 text-blue-600" /> Distribusi Pengeluaran</h3>
@@ -1586,7 +1584,7 @@ export default function App() {
         <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data & Dompet</button>
       </div>
       
-      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v5.1 (Ultimate Dept Tracker)</div>
+      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v5.5 (Installment System)</div>
     </div>
   );
 
@@ -1672,11 +1670,48 @@ export default function App() {
             </div>
         )}
 
+        {/* MODAL INPUT CICILAN / PELUNASAN */}
+        {showInstallmentModal && selectedDebt && (
+            <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-lg text-gray-800">Catat Pembayaran</h3>
+                        <button onClick={() => setShowInstallmentModal(false)} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5"/></button>
+                    </div>
+                    
+                    <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 mb-4">
+                        <p className="text-xs text-gray-500 mb-1">Total Sisa Tagihan:</p>
+                        <p className="text-lg font-bold text-gray-900">
+                            {formatCurrency(parseFloat(selectedDebt.amount) - (parseFloat(selectedDebt.paidAmount) || 0), selectedDebt.currency)}
+                        </p>
+                    </div>
+
+                    <div className="mb-6">
+                        <label className="block text-xs font-bold text-gray-600 mb-2">Jumlah yang dibayar hari ini:</label>
+                        <div className="relative">
+                            <span className="absolute left-4 top-3 font-bold text-gray-400">{selectedDebt.currency}</span>
+                            <input 
+                                autoFocus
+                                type="number" 
+                                value={installmentAmount}
+                                onChange={(e) => setInstallmentAmount(e.target.value)}
+                                className="w-full bg-white border border-gray-300 rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 font-bold text-lg transition-all"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex gap-2">
+                        <button onClick={() => setShowInstallmentModal(false)} className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-colors">Batal</button>
+                        <button onClick={processInstallment} disabled={!installmentAmount || parseFloat(installmentAmount) <= 0} className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md disabled:opacity-50 transition-colors">Simpan</button>
+                    </div>
+                </div>
+            </div>
+        )}
+
         {/* MODAL BUKU UTANG & PIUTANG + DASBOR MINI */}
         {showDebtModal && (
           <div className="fixed inset-0 bg-black/50 z-[80] flex flex-col justify-end md:items-center md:justify-center animate-in slide-in-from-bottom-full md:slide-in-from-bottom-0 md:fade-in duration-300">
              <div className="bg-gray-50 w-full md:max-w-md h-[90vh] md:h-[85vh] md:rounded-2xl rounded-t-3xl shadow-2xl flex flex-col overflow-hidden">
-                {/* Header Modal */}
                 <div className="bg-white p-4 border-b border-gray-100 flex justify-between items-center z-10 shadow-sm">
                    <div className="flex items-center gap-2 text-orange-600">
                        <HandCoins className="w-6 h-6" />
@@ -1701,16 +1736,13 @@ export default function App() {
                     </div>
                 </div>
                 
-                {/* Tab Selector dgn 3 Opsi */}
                 <div className="flex bg-white p-2 border-b border-gray-200 shadow-sm overflow-x-auto hide-scrollbar">
                    <button onClick={() => setActiveDebtTab('lend')} className={"whitespace-nowrap px-4 py-2 text-sm font-bold rounded-lg transition-all " + (activeDebtTab === 'lend' ? "bg-orange-100 text-orange-700" : "text-gray-500 hover:bg-gray-50")}>Belum Lunas (Piutang)</button>
                    <button onClick={() => setActiveDebtTab('borrow')} className={"whitespace-nowrap px-4 py-2 text-sm font-bold rounded-lg transition-all " + (activeDebtTab === 'borrow' ? "bg-orange-100 text-orange-700" : "text-gray-500 hover:bg-gray-50")}>Belum Lunas (Utang)</button>
                    <button onClick={() => setActiveDebtTab('settled')} className={"whitespace-nowrap px-4 py-2 text-sm font-bold rounded-lg transition-all flex items-center gap-1 " + (activeDebtTab === 'settled' ? "bg-gray-800 text-white" : "text-gray-500 hover:bg-gray-50")}><History className="w-4 h-4"/> Riwayat Lunas</button>
                 </div>
 
-                {/* Content List */}
                 <div className="flex-1 overflow-y-auto p-4">
-                   {/* RENDER RIWAYAT LUNAS */}
                    {activeDebtTab === 'settled' ? (
                        settledDebts.length === 0 ? (
                            <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-60">
@@ -1736,7 +1768,6 @@ export default function App() {
                            </div>
                        )
                    ) : (
-                       /* RENDER DAFTAR BELUM LUNAS (PIUTANG / UTANG) */
                        activeDebts.filter(d => d.debtType === activeDebtTab).length === 0 ? (
                            <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-60">
                                <CheckSquare className="w-16 h-16 mb-4 text-emerald-500" />
@@ -1744,7 +1775,12 @@ export default function App() {
                            </div>
                        ) : (
                            <div className="space-y-3">
-                               {activeDebts.filter(d => d.debtType === activeDebtTab).map(debt => (
+                               {activeDebts.filter(d => d.debtType === activeDebtTab).map(debt => {
+                                   const paidAmt = parseFloat(debt.paidAmount) || 0;
+                                   const remainingAmt = parseFloat(debt.amount) - paidAmt;
+                                   const progressPercent = Math.min(100, Math.max(0, (paidAmt / parseFloat(debt.amount)) * 100));
+
+                                   return (
                                    <div key={"debt-"+debt.id} className="bg-white border border-orange-100 rounded-xl p-4 shadow-sm relative overflow-hidden">
                                       <div className={"absolute top-0 left-0 w-1 h-full " + (activeDebtTab === 'lend' ? "bg-emerald-400" : "bg-rose-400")}></div>
                                       <div className="flex justify-between items-start mb-3">
@@ -1753,17 +1789,39 @@ export default function App() {
                                               <p className="text-[10px] text-gray-400 mt-1">Dicatat: {debt.date}</p>
                                               {debt.dueDate && <p className="text-[10px] text-rose-500 font-medium">Tenggat: {new Date(debt.dueDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})}</p>}
                                           </div>
-                                          <span className={"font-bold text-lg " + (activeDebtTab === 'lend' ? "text-emerald-600" : "text-rose-600")}>
-                                              {formatCurrency(debt.amount, debt.currency)}
-                                          </span>
+                                          <div className="text-right">
+                                            <span className={"font-bold text-lg block " + (activeDebtTab === 'lend' ? "text-emerald-600" : "text-rose-600")}>
+                                                {formatCurrency(remainingAmt, debt.currency)}
+                                            </span>
+                                            <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mt-1">Sisa Tagihan</p>
+                                          </div>
                                       </div>
+                                      
+                                      {/* Progress Bar Cicilan */}
+                                      <div className="mb-4">
+                                          <div className="flex justify-between text-[10px] font-bold text-gray-400 mb-1">
+                                              <span>Telah Dibayar: {formatCurrency(paidAmt, debt.currency)}</span>
+                                              <span>Total: {formatCurrency(debt.amount, debt.currency)}</span>
+                                          </div>
+                                          <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                                              <div className={"h-1.5 rounded-full transition-all duration-500 " + (activeDebtTab === 'lend' ? "bg-emerald-500" : "bg-rose-500")} style={{width: `${progressPercent}%`}}></div>
+                                          </div>
+                                      </div>
+
                                       <div className="pt-3 border-t border-gray-100 flex justify-end gap-2">
-                                          <button onClick={() => handleSettleDebt(debt)} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center gap-1">
-                                              <CheckCircle className="w-4 h-4" /> Tandai Lunas
+                                          <button 
+                                            onClick={() => {
+                                                setSelectedDebt(debt);
+                                                setInstallmentAmount(remainingAmt.toString());
+                                                setShowInstallmentModal(true);
+                                            }} 
+                                            className="px-4 py-2 bg-orange-50 hover:bg-orange-100 text-orange-600 border border-orange-200 text-xs font-bold rounded-lg transition-colors flex items-center gap-1"
+                                          >
+                                              <HandCoins className="w-4 h-4" /> Bayar / Cicil
                                           </button>
                                       </div>
                                    </div>
-                               ))}
+                               )})}
                            </div>
                        )
                    )}
@@ -1894,4 +1952,4 @@ export default function App() {
       </div>
     </div>
   );
-}
+              }
