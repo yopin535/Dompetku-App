@@ -3,9 +3,9 @@ import {
   Plus, Trash2, Wallet, TrendingUp, TrendingDown, DollarSign, 
   Cloud, Loader2, Tag, Calendar, PieChart, List, ChevronLeft, ChevronRight, 
   Download, Upload, FileText, CheckCircle, XCircle, X, Settings, Sparkles,
-  LogOut, LogIn, AlertTriangle, User, Info, Check, CloudOff, RefreshCw, Globe, Edit2, Camera,
+  LogOut, LogIn, AlertTriangle, User, Check, CloudOff, RefreshCw, Globe, Edit2, Camera,
   ChevronDown, ChevronUp, Receipt, ArrowRightLeft, CreditCard, Landmark, Eye, EyeOff, Image as ImageIcon,
-  HandCoins, Users, CheckSquare
+  HandCoins, Users, CheckSquare, Search, SlidersHorizontal
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -78,10 +78,19 @@ export default function App() {
   const [activeItemIndex, setActiveItemIndex] = useState(null);
   const [newCatName, setNewCatName] = useState('');
 
-  // Modals untuk Fitur
+  // Modals & Fitur Baru (Search & Filter)
   const [previewImage, setPreviewImage] = useState(null);
   const [showDebtModal, setShowDebtModal] = useState(false);
-  const [activeDebtTab, setActiveDebtTab] = useState('lend'); // 'lend' (piutang) or 'borrow' (utang)
+  const [activeDebtTab, setActiveDebtTab] = useState('lend'); 
+  
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
+  const [filterType, setFilterType] = useState('all'); 
+  const [sortBy, setSortBy] = useState('date_desc'); 
+
+  // Filter Wallet untuk Report
+  const [reportWalletId, setReportWalletId] = useState('all');
 
   const getCurrentDate = () => {
     const now = new Date();
@@ -103,18 +112,18 @@ export default function App() {
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState(defaultCurrency); 
   const [date, setDate] = useState(getCurrentDate());
-  const [selectedCategories, setSelectedCategories] = useState([]); // Default KOSONG sesuai permintaan
+  const [selectedCategories, setSelectedCategories] = useState([]); 
   const [items, setItems] = useState([]); 
   const [receiptImageUrl, setReceiptImageUrl] = useState(null); 
   
   // States Khusus Dompet & Transfer
-  const [walletId, setWalletId] = useState(''); // Default KOSONG sesuai permintaan
+  const [walletId, setWalletId] = useState(''); 
   const [toWalletId, setToWalletId] = useState('');
   const [receivedAmount, setReceivedAmount] = useState('');
   const [adminFee, setAdminFee] = useState('');
 
   // States Khusus Utang/Piutang
-  const [debtType, setDebtType] = useState('lend'); // 'lend' (Meminjamkan/Piutang), 'borrow' (Meminjam/Utang)
+  const [debtType, setDebtType] = useState('lend'); 
   const [personName, setPersonName] = useState('');
   const [dueDate, setDueDate] = useState('');
   
@@ -149,10 +158,8 @@ export default function App() {
     return [...defaultIncomeCategories, ...custom];
   }, [customCategories]);
 
-  // Hapus efek auto-select dompet dan kategori. Semua harus dipilih manual.
   useEffect(() => {
     if(!editId && (type === 'expense' || type === 'income' || type === 'debt')) {
-       // Kategori dikosongkan saat ganti tab supaya user pilih manual
        setSelectedCategories([]);
     }
   }, [type, editId]);
@@ -204,11 +211,6 @@ export default function App() {
     const transRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
     const unsubTrans = onSnapshot(transRef, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      data.sort((a, b) => {
-        const dateA = a.transactionDate || a.createdAt;
-        const dateB = b.transactionDate || b.createdAt;
-        return dateB - dateA; 
-      });
       setTransactions(data);
       setLoading(false);
       if (navigator.onLine) setTimeout(() => setSyncStatus('synced'), 800); 
@@ -272,10 +274,9 @@ export default function App() {
                balances[t.toWalletId] += parseFloat(t.receivedAmount || t.amount || 0);
            }
        } else if (t.type === 'debt') {
-           // Kalkulasi Utang/Piutang di saldo Dompet
-           if (t.debtType === 'lend') { // Meminjamkan (Uang keluar)
+           if (t.debtType === 'lend') { 
                if(balances[t.walletId] !== undefined) balances[t.walletId] -= parseFloat(t.amount || 0);
-           } else if (t.debtType === 'borrow') { // Meminjam (Uang masuk)
+           } else if (t.debtType === 'borrow') { 
                if(balances[t.walletId] !== undefined) balances[t.walletId] += parseFloat(t.amount || 0);
            }
        }
@@ -292,7 +293,6 @@ export default function App() {
       return totals;
   }, [wallets, walletBalances, defaultCurrency]);
 
-  // Data utang piutang yang belum lunas
   const activeDebts = useMemo(() => {
       return transactions.filter(t => t.type === 'debt' && t.status === 'unpaid');
   }, [transactions]);
@@ -512,7 +512,7 @@ export default function App() {
       if (selectedCategories.length > 1) {
         setSelectedCategories(selectedCategories.filter(c => c !== cat));
       } else {
-        setSelectedCategories([]); // Boleh kosong sekarang
+        setSelectedCategories([]); 
       }
     } else {
       setSelectedCategories([...selectedCategories, cat]);
@@ -521,8 +521,6 @@ export default function App() {
 
   const handleAddTransaction = async (e) => {
     e.preventDefault();
-    
-    // VALIDASI KETAT
     if (!walletId) {
         setNotification({ type: 'error', message: 'Pilih Dompet / Sumber Dana terlebih dahulu!' });
         return;
@@ -597,34 +595,30 @@ export default function App() {
         setNotification({ type: 'success', message: 'Tersimpan.' });
       }
       
-      // Reset Form
       setHomeViewDate(selectedDate); setDescription(''); setAmount(''); setDate(getCurrentDate()); setItems([]);
       setReceivedAmount(''); setAdminFee(''); setReceiptImageUrl(null);
       setPersonName(''); setDueDate('');
-      setWalletId(''); // Kembalikan dompet jadi kosong
-      setSelectedCategories([]); // Kembalikan kategori jadi kosong
+      setWalletId(''); 
+      setSelectedCategories([]); 
     } catch (error) {
       setNotification({ type: 'error', message: editId ? 'Gagal memperbarui.' : 'Gagal menyimpan.' });
       setSyncStatus('offline');
     }
   };
 
-  // Fungsi Pelunasan Utang
   const handleSettleDebt = async (debt) => {
     if (!user) return;
     setSyncStatus('saving');
     try {
-        // 1. Ubah status transaksi utang lama jadi Lunas
         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', debt.id), { 
             status: 'paid', 
             paidAt: Date.now() 
         });
 
-        // 2. Buat transaksi pelunasan baru agar uang kembali ke dompet
         const d = new Date();
         const tData = {
             amount: debt.amount,
-            type: debt.debtType === 'lend' ? 'income' : 'expense', // Jika tadinya minjemin (uang keluar), sekarang lunas berarti uang masuk (income)
+            type: debt.debtType === 'lend' ? 'income' : 'expense',
             walletId: debt.walletId,
             currency: debt.currency,
             description: "Pelunasan dari " + debt.personName,
@@ -639,7 +633,7 @@ export default function App() {
         await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), tData);
         
         setNotification({type: 'success', message: 'Utang berhasil dilunasi!'});
-        if (activeDebts.length <= 1) setShowDebtModal(false); // Tutup modal jika habis
+        if (activeDebts.length <= 1) setShowDebtModal(false); 
     } catch(e) {
         console.error(e);
         setNotification({type: 'error', message: 'Gagal melunasi.'});
@@ -695,9 +689,73 @@ export default function App() {
       else setExpandedId(id);
   };
 
+  // --- LOGIKA PENCARIAN & FILTER DI BERANDA ---
+  const processedHomeTransactions = useMemo(() => {
+    let result = transactions.filter(t => {
+        const d = new Date(t.transactionDate || t.createdAt);
+        const isCurrentMonth = d.getMonth() === homeViewDate.getMonth() && d.getFullYear() === homeViewDate.getFullYear();
+
+        // Jika user sedang mencari, abaikan filter bulan (cari di semua riwayat)
+        if (searchQuery) {
+            const q = searchQuery.toLowerCase();
+            const matchDesc = t.description ? t.description.toLowerCase().includes(q) : false;
+            const matchCat = (t.category && t.category.toLowerCase().includes(q)) || (t.categories && t.categories.some(c => c.toLowerCase().includes(q)));
+            const matchItem = t.items ? t.items.some(i => (i.name && i.name.toLowerCase().includes(q)) || (i.category && i.category.toLowerCase().includes(q))) : false;
+            const matchPerson = t.personName ? t.personName.toLowerCase().includes(q) : false;
+            if (!matchDesc && !matchCat && !matchItem && !matchPerson) return false;
+        } else {
+            if (!isCurrentMonth) return false; // Kalau tidak mencari, batasi bulan ini saja
+        }
+
+        // Terapkan Filter Tipe
+        if (filterType !== 'all' && t.type !== filterType) return false;
+
+        return true;
+    });
+
+    // Terapkan Sorting
+    result.sort((a, b) => {
+        const dateA = a.transactionDate || a.createdAt;
+        const dateB = b.transactionDate || b.createdAt;
+        if (sortBy === 'date_desc') return dateB - dateA;
+        if (sortBy === 'date_asc') return dateA - dateB;
+        if (sortBy === 'amount_desc') return b.amount - a.amount;
+        if (sortBy === 'amount_asc') return a.amount - b.amount;
+        return 0;
+    });
+
+    return result;
+  }, [transactions, homeViewDate, searchQuery, filterType, sortBy]);
+
+  // Jika sorting berdasarkan harga, kita flat-kan daftarnya (tidak digrup per tanggal lagi)
+  const { groupedHomeTransactions, homeTransactionsCount, isFlatList } = useMemo(() => {
+    if (sortBy.includes('amount') || searchQuery) {
+        return { 
+            groupedHomeTransactions: [{ date: searchQuery ? 'Hasil Pencarian' : 'Hasil Filter Data', items: processedHomeTransactions }], 
+            homeTransactionsCount: processedHomeTransactions.length, 
+            isFlatList: true 
+        };
+    }
+    
+    const grouped = [];
+    processedHomeTransactions.forEach(t => {
+      const lastGroup = grouped[grouped.length - 1];
+      if (lastGroup && lastGroup.date === t.date) lastGroup.items.push(t);
+      else grouped.push({ date: t.date, items: [t] });
+    });
+    return { groupedHomeTransactions: grouped, homeTransactionsCount: processedHomeTransactions.length, isFlatList: false };
+  }, [processedHomeTransactions, sortBy, searchQuery]);
+
+  const getLabelClass = (cat) => {
+    if (!selectedCategories.includes(cat)) return "bg-white text-gray-600 border-gray-200 hover:border-gray-300";
+    return type === 'expense' 
+      ? "bg-rose-600 text-white border-rose-600 shadow-sm" 
+      : "bg-emerald-600 text-white border-emerald-600 shadow-sm";
+  };
+
   const renderHeader = () => {
     return (
-      <div className="bg-gradient-to-b from-blue-700 to-indigo-800 px-5 pt-6 pb-6 text-white rounded-b-[2rem] shadow-lg mb-2 relative overflow-hidden">
+      <div className="bg-gradient-to-b from-blue-700 to-indigo-800 px-5 pt-6 pb-6 text-white rounded-b-[2rem] shadow-lg mb-2 relative overflow-hidden transition-all duration-300">
          <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
             <Sparkles className="w-32 h-32" />
          </div>
@@ -710,11 +768,22 @@ export default function App() {
                      {hideBalance ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                </div>
-               <div className="flex items-center gap-3">
-                  {syncStatus === 'saving' && <RefreshCw className="w-4 h-4 text-blue-200 animate-spin" />}
-                  {syncStatus === 'synced' && <Cloud className="w-4 h-4 text-blue-200" />}
-                  {syncStatus === 'offline' && <CloudOff className="w-4 h-4 text-rose-300" />}
-                  <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center border border-white/30 backdrop-blur-sm shadow-sm cursor-pointer hover:bg-white/30 transition-all" onClick={() => setView('settings')}>
+               <div className="flex items-center gap-2">
+                  {/* ICON PENCARIAN */}
+                  <button onClick={() => { setIsSearchOpen(!isSearchOpen); if(isSearchOpen) setSearchQuery(''); }} className="p-1.5 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-blue-100">
+                      <Search className="w-4 h-4" />
+                  </button>
+                  {/* ICON FILTER */}
+                  <button onClick={() => setShowFilterSheet(true)} className="p-1.5 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-blue-100 relative">
+                      <SlidersHorizontal className="w-4 h-4" />
+                      {(filterType !== 'all' || sortBy !== 'date_desc') && <span className="absolute top-0 right-0 w-2 h-2 bg-rose-500 rounded-full border border-blue-800"></span>}
+                  </button>
+                  
+                  {syncStatus === 'saving' && <RefreshCw className="w-4 h-4 text-blue-200 animate-spin ml-1" />}
+                  {syncStatus === 'synced' && <Cloud className="w-4 h-4 text-blue-200 ml-1" />}
+                  {syncStatus === 'offline' && <CloudOff className="w-4 h-4 text-rose-300 ml-1" />}
+                  
+                  <div className="w-8 h-8 ml-1 rounded-full bg-white/20 flex items-center justify-center border border-white/30 backdrop-blur-sm shadow-sm cursor-pointer hover:bg-white/30 transition-all" onClick={() => setView('settings')}>
                      {user && user.photoURL && !user.isAnonymous ? (
                         <img src={user.photoURL} alt="Profil" className="w-full h-full rounded-full object-cover" />
                      ) : (
@@ -724,14 +793,35 @@ export default function App() {
                </div>
             </div>
             
-            <div className="flex items-baseline gap-2">
-               <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-                  {hideBalance ? '••••••••' : formatCurrency(totalBalancesByCurrency[defaultCurrency] || 0, defaultCurrency)}
-               </h1>
-            </div>
+            {/* TOGGLE SEARCH INPUT VS SALDO */}
+            {isSearchOpen ? (
+                <div className="mt-3 animate-in fade-in zoom-in-95 duration-200">
+                    <div className="relative">
+                        <input 
+                            autoFocus
+                            type="text" 
+                            placeholder="Cari warung, barang, atau teman..." 
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full bg-white/20 border border-white/30 text-white placeholder-blue-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-white/50 text-sm font-medium backdrop-blur-sm shadow-inner"
+                        />
+                        {searchQuery && (
+                            <button onClick={() => setSearchQuery('')} className="absolute right-3 top-3 text-blue-200 hover:text-white">
+                                <X className="w-4 h-4" />
+                            </button>
+                        )}
+                    </div>
+                </div>
+            ) : (
+                <div className="flex items-baseline gap-2 mt-2 animate-in fade-in duration-200">
+                   <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
+                      {hideBalance ? '••••••••' : formatCurrency(totalBalancesByCurrency[defaultCurrency] || 0, defaultCurrency)}
+                   </h1>
+                </div>
+            )}
             
-            {Object.keys(totalBalancesByCurrency).length > 1 && (
-               <div className="mt-2.5 flex flex-wrap gap-2">
+            {!isSearchOpen && Object.keys(totalBalancesByCurrency).length > 1 && (
+               <div className="mt-2.5 flex flex-wrap gap-2 animate-in fade-in duration-300">
                   {Object.keys(totalBalancesByCurrency).filter(c => c !== defaultCurrency).map(c => (
                      <span key={c} className="text-[10px] font-medium bg-black/20 px-2 py-1 rounded-full border border-white/10 backdrop-blur-md">
                         {hideBalance ? '•••' : formatCurrency(totalBalancesByCurrency[c], c)}
@@ -742,33 +832,6 @@ export default function App() {
          </div>
       </div>
     );
-  };
-
-  const changeHomeMonth = (increment) => {
-    const newDate = new Date(homeViewDate);
-    newDate.setMonth(newDate.getMonth() + increment);
-    setHomeViewDate(newDate);
-  };
-
-  const { groupedHomeTransactions, homeTransactionsCount } = useMemo(() => {
-    const filtered = transactions.filter(t => {
-      const d = new Date(t.transactionDate || t.createdAt);
-      return d.getMonth() === homeViewDate.getMonth() && d.getFullYear() === homeViewDate.getFullYear();
-    });
-    const grouped = [];
-    filtered.forEach(t => {
-      const lastGroup = grouped[grouped.length - 1];
-      if (lastGroup && lastGroup.date === t.date) lastGroup.items.push(t);
-      else grouped.push({ date: t.date, items: [t] });
-    });
-    return { groupedHomeTransactions: grouped, homeTransactionsCount: filtered.length };
-  }, [transactions, homeViewDate]);
-
-  const getLabelClass = (cat) => {
-    if (!selectedCategories.includes(cat)) return "bg-white text-gray-600 border-gray-200 hover:border-gray-300";
-    return type === 'expense' 
-      ? "bg-rose-600 text-white border-rose-600 shadow-sm" 
-      : "bg-emerald-600 text-white border-emerald-600 shadow-sm";
   };
 
   const renderHomeView = () => {
@@ -1011,19 +1074,22 @@ export default function App() {
         </div>
 
         <div>
-          <div className="flex items-center justify-between mb-4 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
-            <button type="button" onClick={() => changeHomeMonth(-1)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
-            <div className="text-center">
-              <h3 className="font-bold text-gray-800 text-sm">{homeViewDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}</h3>
-              <p className="text-[10px] text-gray-500">{homeTransactionsCount} transaksi dicatat</p>
-            </div>
-            <button type="button" onClick={() => changeHomeMonth(1)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ChevronRight className="w-5 h-5 text-gray-600" /></button>
-          </div>
+          {/* HEADER RIWAYAT & FILTER WAKTU (Cuma Tampil Kalau Gak Lagi Nyari) */}
+          {!searchQuery && !sortBy.includes('amount') && (
+              <div className="flex items-center justify-between mb-4 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
+                <button type="button" onClick={() => changeHomeMonth(-1)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
+                <div className="text-center">
+                  <h3 className="font-bold text-gray-800 text-sm">{homeViewDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}</h3>
+                  <p className="text-[10px] text-gray-500">{homeTransactionsCount} transaksi</p>
+                </div>
+                <button type="button" onClick={() => changeHomeMonth(1)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ChevronRight className="w-5 h-5 text-gray-600" /></button>
+              </div>
+          )}
           
-          {groupedHomeTransactions.length === 0 ? (
+          {groupedHomeTransactions.length === 0 || (groupedHomeTransactions.length === 1 && groupedHomeTransactions[0].items.length === 0) ? (
             <div className="text-center py-10 bg-white rounded-2xl border border-dashed border-gray-200">
-              <div className="bg-gray-50 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3"><DollarSign className="w-6 h-6 text-gray-400" /></div>
-              <p className="text-gray-500 text-sm">Belum ada transaksi di bulan ini.</p>
+              <div className="bg-gray-50 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3"><Search className="w-6 h-6 text-gray-400" /></div>
+              <p className="text-gray-500 text-sm">{searchQuery || filterType !== 'all' ? 'Tidak ada data yang cocok dengan filter/pencarian.' : 'Belum ada transaksi di bulan ini.'}</p>
             </div>
           ) : (
             <div className="space-y-6 pb-8">
@@ -1048,6 +1114,7 @@ export default function App() {
                               <div className="min-w-0">
                                 <h4 className="font-semibold text-gray-800 text-sm truncate">{t.description}</h4>
                                 <div className="flex flex-wrap gap-1 mt-1">
+                                  {isFlatList && <span className="text-[9px] px-1.5 py-0.5 bg-gray-800 text-white rounded font-bold">{t.date}</span>}
                                   {isTransfer ? (
                                       <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded font-bold">Transfer</span>
                                   ) : isDebt ? (
@@ -1150,7 +1217,19 @@ export default function App() {
     });
   }, [transactions, reportDate, reportType]);
 
-  const reportTransactions = useMemo(() => filteredByPeriod.filter(t => (t.currency || 'IDR') === reportCurrency), [filteredByPeriod, reportCurrency]);
+  const reportTransactions = useMemo(() => {
+    return filteredByPeriod.filter(t => {
+        // Filter Mata Uang
+        if ((t.currency || 'IDR') !== reportCurrency) return false;
+        
+        // Filter Dompet Khusus
+        if (reportWalletId !== 'all') {
+            if (t.walletId !== reportWalletId && t.toWalletId !== reportWalletId) return false;
+        }
+        
+        return true;
+    });
+  }, [filteredByPeriod, reportCurrency, reportWalletId]);
 
   const categoryStats = useMemo(() => {
     const stats = {}; let totalExpense = 0;
@@ -1222,15 +1301,22 @@ export default function App() {
     return '';
   };
 
-  // KOMPONEN RENDER LAPORAN (DESIGN ULTIMATE)
   const renderReportView = () => (
     <div className="animate-in fade-in duration-300">
       
-      {/* 1. FILTER PILL */}
-      <div className="bg-white rounded-full shadow-sm border border-gray-100 p-1 mb-6 mx-auto w-max max-w-full flex">
+      {/* 1. FILTER PILL WAKTU */}
+      <div className="bg-white rounded-full shadow-sm border border-gray-100 p-1 mb-3 mx-auto w-max max-w-full flex">
           <button onClick={() => setReportType('daily')} className={"px-4 py-1.5 text-xs font-bold rounded-full transition-all " + (reportType === 'daily' ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}>Harian</button>
           <button onClick={() => setReportType('weekly')} className={"px-4 py-1.5 text-xs font-bold rounded-full transition-all " + (reportType === 'weekly' ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}>Mingguan</button>
           <button onClick={() => setReportType('monthly')} className={"px-4 py-1.5 text-xs font-bold rounded-full transition-all " + (reportType === 'monthly' ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}>Bulanan</button>
+      </div>
+      
+      {/* FILTER PILL DOMPET (HORIZONTAL SCROLL) */}
+      <div className="flex overflow-x-auto gap-2 mb-6 pb-2 hide-scrollbar px-1">
+         <button onClick={() => setReportWalletId('all')} className={"whitespace-nowrap px-4 py-1.5 text-[10px] uppercase tracking-wider font-bold rounded-full border transition-all " + (reportWalletId === 'all' ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>Semua Dompet</button>
+         {wallets.map(w => (
+             <button key={"rw-"+w.id} onClick={() => setReportWalletId(w.id)} className={"whitespace-nowrap px-4 py-1.5 text-[10px] uppercase tracking-wider font-bold rounded-full border transition-all " + (reportWalletId === w.id ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>{w.name}</button>
+         ))}
       </div>
       
       {/* 2. KARTU KESEHATAN FINANSIAL */}
@@ -1274,10 +1360,9 @@ export default function App() {
         </div>
 
         {categoryStats.length === 0 ? (
-            <div className="text-center py-8 text-gray-400 text-sm">Belum ada pengeluaran di periode ini.</div> 
+            <div className="text-center py-8 text-gray-400 text-sm">Belum ada pengeluaran di periode/dompet ini.</div> 
         ) : (
           <div className="flex flex-col items-center">
-            {/* Donut Chart CSS Implementation */}
             <div className="relative w-40 h-40 rounded-full flex items-center justify-center mb-6 shadow-inner" style={{ 
                 background: `conic-gradient(${categoryStats.map((cat, i) => {
                     const colors = ['#3b82f6', '#ef4444', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899', '#64748b'];
@@ -1291,7 +1376,6 @@ export default function App() {
                 </div>
             </div>
 
-            {/* AI Insight Box */}
             <div className="w-full bg-purple-50 border border-purple-100 rounded-xl p-4 mb-4 flex gap-3">
                 <Sparkles className="w-5 h-5 text-purple-500 flex-shrink-0 mt-0.5" />
                 <p className="text-xs text-purple-800 font-medium leading-relaxed">
@@ -1300,13 +1384,11 @@ export default function App() {
                 </p>
             </div>
             
-            {/* Kategori Legenda & Akordeon */}
             <div className="w-full space-y-2">
               {categoryStats.map((cat, i) => {
                   const colors = ['bg-blue-500', 'bg-rose-500', 'bg-orange-500', 'bg-emerald-500', 'bg-purple-500', 'bg-pink-500', 'bg-slate-500'];
                   const isExpanded = expandedId === 'cat-' + cat.name;
                   
-                  // Filter transaksi yang termasuk di kategori ini
                   const catTransactions = reportTransactions.filter(t => {
                       if(t.type !== 'expense') return false;
                       if(t.items && t.items.length > 0) return t.items.some(item => (item.category || (t.categories && t.categories.length > 0 ? t.categories[0] : (t.category || 'Umum'))) === cat.name);
@@ -1351,7 +1433,7 @@ export default function App() {
     <div className="animate-in fade-in duration-300">
       <h2 className="text-2xl font-bold text-gray-900 mb-6">Pengaturan</h2>
       
-      {/* MENU BUKU UTANG & PIUTANG (BARU) */}
+      {/* MENU BUKU UTANG & PIUTANG */}
       <button onClick={() => setShowDebtModal(true)} className="w-full bg-gradient-to-r from-orange-500 to-rose-500 rounded-2xl shadow-md p-4 mb-6 relative overflow-hidden flex items-center justify-between group hover:shadow-lg transition-all text-left">
         <div className="absolute top-0 right-0 p-2 opacity-20 pointer-events-none"><HandCoins className="w-20 h-20" /></div>
         <div className="relative z-10 flex items-center gap-4">
@@ -1469,12 +1551,12 @@ export default function App() {
         <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data & Dompet</button>
       </div>
       
-      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v4.5 (Ultimate Tracker)</div>
+      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v5.0 (Smart Search & Analytics)</div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-800 md:p-8 pb-24">
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-800 md:p-8 pb-24 relative">
       <div className="max-w-md mx-auto relative min-h-screen shadow-xl md:rounded-[2rem] bg-gray-50 overflow-hidden">
         
         {view === 'home' && renderHeader()}
@@ -1501,6 +1583,52 @@ export default function App() {
           </div>
         )}
 
+        {/* BOTTOM SHEET FILTER BERANDA */}
+        {showFilterSheet && (
+          <div className="fixed inset-0 bg-black/60 z-[85] flex flex-col justify-end animate-in fade-in duration-200 md:items-center md:justify-center">
+            <div className="bg-white rounded-t-3xl md:rounded-2xl p-6 w-full md:max-w-md animate-in slide-in-from-bottom-full duration-300 shadow-2xl">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="font-bold text-gray-800 text-lg flex items-center gap-2"><SlidersHorizontal className="w-5 h-5 text-blue-600" /> Filter & Urutkan</h3>
+                    <button onClick={() => setShowFilterSheet(false)} className="p-2 bg-gray-100 rounded-full text-gray-500 hover:text-gray-800"><X className="w-5 h-5" /></button>
+                </div>
+                
+                <div className="mb-5">
+                    <p className="text-xs font-bold text-gray-400 mb-3 tracking-wider">TIPE TRANSAKSI</p>
+                    <div className="flex flex-wrap gap-2">
+                        {['all', 'expense', 'income', 'transfer', 'debt'].map(t => {
+                            const labels = {all: 'Semua Data', expense: 'Hanya Pengeluaran', income: 'Hanya Pemasukan', transfer: 'Transfer Saja', debt: 'Utang/Piutang'};
+                            return (
+                                <button key={t} onClick={() => setFilterType(t)} className={"px-4 py-2 rounded-xl text-xs font-bold border transition-all " + (filterType === t ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20" : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100")}>
+                                    {labels[t]}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                <div className="mb-8">
+                    <p className="text-xs font-bold text-gray-400 mb-3 tracking-wider">URUTKAN BERDASARKAN</p>
+                    <div className="grid grid-cols-2 gap-3">
+                        <button onClick={() => setSortBy('date_desc')} className={"p-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 " + (sortBy === 'date_desc' ? "bg-blue-50 text-blue-700 border-blue-300" : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100")}>
+                            📅 Terbaru Dulu
+                        </button>
+                        <button onClick={() => setSortBy('date_asc')} className={"p-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 " + (sortBy === 'date_asc' ? "bg-blue-50 text-blue-700 border-blue-300" : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100")}>
+                            📅 Terlama Dulu
+                        </button>
+                        <button onClick={() => setSortBy('amount_desc')} className={"p-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 " + (sortBy === 'amount_desc' ? "bg-blue-50 text-blue-700 border-blue-300" : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100")}>
+                            💰 Nominal Terbesar
+                        </button>
+                        <button onClick={() => setSortBy('amount_asc')} className={"p-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 " + (sortBy === 'amount_asc' ? "bg-blue-50 text-blue-700 border-blue-300" : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100")}>
+                            💰 Nominal Terkecil
+                        </button>
+                    </div>
+                </div>
+
+                <button onClick={() => setShowFilterSheet(false)} className="w-full bg-gray-900 text-white font-bold py-3.5 rounded-xl hover:bg-black transition-colors shadow-lg">Terapkan Filter</button>
+            </div>
+          </div>
+        )}
+
         {/* MODAL FULLSCREEN PREVIEW GAMBAR STRUK */}
         {previewImage && (
             <div className="fixed inset-0 bg-black/90 z-[90] flex flex-col items-center justify-center p-4 animate-in fade-in zoom-in duration-200">
@@ -1513,7 +1641,6 @@ export default function App() {
         {showDebtModal && (
           <div className="fixed inset-0 bg-black/50 z-[80] flex flex-col justify-end md:items-center md:justify-center animate-in slide-in-from-bottom-full md:slide-in-from-bottom-0 md:fade-in duration-300">
              <div className="bg-gray-50 w-full md:max-w-md h-[85vh] md:h-[80vh] md:rounded-2xl rounded-t-3xl shadow-2xl flex flex-col overflow-hidden">
-                {/* Header Modal */}
                 <div className="bg-white p-4 border-b border-gray-200 flex justify-between items-center z-10 shadow-sm">
                    <div className="flex items-center gap-2 text-orange-600">
                        <HandCoins className="w-6 h-6" />
@@ -1522,13 +1649,11 @@ export default function App() {
                    <button onClick={() => setShowDebtModal(false)} className="p-2 bg-gray-100 rounded-full text-gray-500 hover:text-gray-800 transition-colors"><X className="w-5 h-5" /></button>
                 </div>
                 
-                {/* Tab Selector */}
                 <div className="flex bg-white p-2 border-b border-gray-200 shadow-sm">
                    <button onClick={() => setActiveDebtTab('lend')} className={"flex-1 py-2 text-sm font-bold rounded-lg transition-all " + (activeDebtTab === 'lend' ? "bg-orange-100 text-orange-700" : "text-gray-500 hover:bg-gray-50")}>Piutang (Uang di Orang)</button>
                    <button onClick={() => setActiveDebtTab('borrow')} className={"flex-1 py-2 text-sm font-bold rounded-lg transition-all " + (activeDebtTab === 'borrow' ? "bg-orange-100 text-orange-700" : "text-gray-500 hover:bg-gray-50")}>Utang (Pinjaman Saya)</button>
                 </div>
 
-                {/* Content List */}
                 <div className="flex-1 overflow-y-auto p-4">
                    {activeDebts.filter(d => d.debtType === activeDebtTab).length === 0 ? (
                        <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-60">
@@ -1654,7 +1779,7 @@ export default function App() {
                     {customCategories.filter(c => c.type === type).map((c) => (
                       <li key={c.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100 group hover:border-blue-200 transition-colors">
                         <span className="text-sm font-medium text-gray-700">{c.name}</span>
-                        <button onClick={() => handleDeleteCategory(c.id, c.name)} className="text-gray-400 hover:text-rose-500 p-1.5 hover:bg-rose-50 rounded-lg transition-all"><Trash className="w-4 h-4" /></button>
+                        <button onClick={() => handleDeleteCategory(c.id, c.name)} className="text-gray-400 hover:text-rose-500 p-1.5 hover:bg-rose-50 rounded-lg transition-all"><Trash2 className="w-4 h-4" /></button>
                       </li>
                     ))}
                   </ul>
@@ -1686,4 +1811,4 @@ export default function App() {
       </div>
     </div>
   );
-                  }
+}
