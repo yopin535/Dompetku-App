@@ -377,7 +377,6 @@ export default function App() {
       } catch (error) { setSyncStatus('offline'); }
   };
 
-  // --- MANUAL EXPORT & IMPORT DATA (DIKEMBALIKAN & DISESUAIKAN UTANG) ---
   const downloadCSV = () => {
     if (transactions.length === 0) { setNotification({ type: 'error', message: 'Tidak ada data.' }); return; }
     
@@ -862,7 +861,6 @@ export default function App() {
     }
   };
 
-  // --- FUNGSI CICILAN UTANG (AMAN DARI BUG) ---
   const processInstallment = async () => {
       if (!user || !selectedDebt) return;
       const payVal = parseFloat(installmentAmount);
@@ -965,30 +963,14 @@ export default function App() {
       else setExpandedId(id);
   };
 
-  // --- PERBAIKAN BUG PINDAH BULAN ---
   const changeHomeMonth = (increment) => {
     setHomeViewDate(prevDate => {
-        // Gunakan hari ke-1 (tanggal 1) saat menggeser bulan agar tidak kena Month Overflow (e.g. 31 Jan -> 31 Feb (invalid) -> loncat ke Mar)
+        // Amankan kalender dari bug loncat bulan di tgl 31
         const newDate = new Date(prevDate.getFullYear(), prevDate.getMonth() + increment, 1);
         return newDate;
     });
   };
 
-  const changeReportPeriod = (increment) => {
-    setReportDate(prevDate => {
-        const newDate = new Date(prevDate.getFullYear(), prevDate.getMonth(), prevDate.getDate());
-        if (reportType === 'yearly') newDate.setFullYear(newDate.getFullYear() + increment);
-        else if (reportType === 'monthly') {
-            newDate.setMonth(newDate.getMonth() + increment);
-            newDate.setDate(1); 
-        }
-        else if (reportType === 'weekly') newDate.setDate(newDate.getDate() + (increment * 7));
-        else if (reportType === 'daily') newDate.setDate(newDate.getDate() + increment);
-        return newDate;
-    });
-  };
-
-  // --- LOGIKA PENCARIAN & FILTER DI BERANDA ---
   const processedHomeTransactions = useMemo(() => {
     let result = transactions.filter(t => {
         const d = new Date(t.transactionDate || t.createdAt);
@@ -1835,7 +1817,7 @@ export default function App() {
 
       {/* MANAJEMEN DATA & BACKUP (DIKEMBALIKAN) */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
-        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2"><Database className="w-4 h-4 text-gray-400" /> Manajemen Data</h3>
+        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2"><Cloud className="w-4 h-4 text-gray-400" /> Manajemen Data</h3>
         
         <div className="grid grid-cols-2 gap-3 mb-4">
             <button onClick={downloadCSV} className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 rounded-xl transition-all group">
@@ -1860,7 +1842,7 @@ export default function App() {
         <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data & Dompet</button>
       </div>
       
-      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v5.6 (Stable UI Edition)</div>
+      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v6.0 (Perfect Final)</div>
     </div>
   );
 
@@ -2255,4 +2237,4 @@ export default function App() {
       </div>
     </div>
   );
-    }
+                }
