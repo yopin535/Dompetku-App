@@ -5,7 +5,7 @@ import {
   Download, Upload, FileText, CheckCircle, XCircle, X, Settings, Sparkles,
   LogOut, LogIn, AlertTriangle, User, Check, CloudOff, RefreshCw, Globe, Edit2, Camera,
   ChevronDown, ChevronUp, Receipt, ArrowRightLeft, CreditCard, Landmark, Eye, EyeOff, Image as ImageIcon,
-  HandCoins, Users, CheckSquare, Search, SlidersHorizontal, History
+  HandCoins, Users, CheckSquare, Search, SlidersHorizontal, History, Database
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -284,7 +284,6 @@ export default function App() {
                balances[t.toWalletId] += parseFloat(t.receivedAmount || t.amount || 0);
            }
        } else if (t.type === 'debt') {
-           // Untuk Utang/Piutang awal (Uang keluar/masuk)
            if (t.debtType === 'lend') { 
                if(balances[t.walletId] !== undefined) balances[t.walletId] -= parseFloat(t.amount || 0);
            } else if (t.debtType === 'borrow') { 
@@ -378,11 +377,10 @@ export default function App() {
       } catch (error) { setSyncStatus('offline'); }
   };
 
-  // --- MANUAL EXPORT & IMPORT DATA (DIKEMBALIKAN) ---
+  // --- MANUAL EXPORT & IMPORT DATA (DIKEMBALIKAN & DISESUAIKAN UTANG) ---
   const downloadCSV = () => {
     if (transactions.length === 0) { setNotification({ type: 'error', message: 'Tidak ada data.' }); return; }
     
-    // Header CSV ditambahkan properti utang agar kompatibel
     const headers = "id,iso_date,tanggal_display,deskripsi,kategori,tipe,mata_uang,jumlah,dompet_asal,dompet_tujuan,biaya_admin,rincian_item,url_struk,debtType,personName,dueDate,status,paidAmount,isSettlement,settledDebtId";
     const csvRows = [headers];
     
@@ -435,7 +433,9 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  const handleImportClick = () => fileInputRef.current?.click();
+  const handleImportClick = () => {
+    if(fileInputRef.current) fileInputRef.current.click();
+  };
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -469,9 +469,8 @@ export default function App() {
                 return s.split('""').join('"');
             };
             
-            // Kompatibilitas Parser lama vs Baru
-            const hasIdCol = cols[0].length > 15; // Asumsi format baru ada ID di col 0
-            const offset = hasIdCol ? 1 : 0; // Kalau format lama, ISO Date ada di index 0
+            const hasIdCol = cols[0].length > 15; 
+            const offset = hasIdCol ? 1 : 0; 
 
             const isoDate = clean(cols[offset]);
             const description = clean(cols[offset+2]);
@@ -496,14 +495,15 @@ export default function App() {
                 });
                 recUrl = clean(cols[offset+11]);
                 
-                // Fields Utang Baru
-                debtT = clean(cols[offset+12]);
-                pName = clean(cols[offset+13]);
-                dDate = clean(cols[offset+14]);
-                st = clean(cols[offset+15]);
-                pAmt = parseFloat(clean(cols[offset+16]) || 0);
-                isSet = clean(cols[offset+17]) === 'true';
-                setDId = clean(cols[offset+18]);
+                if(cols.length >= offset + 18) {
+                    debtT = clean(cols[offset+12]);
+                    pName = clean(cols[offset+13]);
+                    dDate = clean(cols[offset+14]);
+                    st = clean(cols[offset+15]);
+                    pAmt = parseFloat(clean(cols[offset+16]) || 0);
+                    isSet = clean(cols[offset+17]) === 'true';
+                    setDId = clean(cols[offset+18]);
+                }
             }
             
             if (isoDate && description && !isNaN(amt)) {
@@ -862,7 +862,7 @@ export default function App() {
     }
   };
 
-  // --- FUNGSI CICILAN UTANG DENGAN WALLET & TANGGAL KUSTOM ---
+  // --- FUNGSI CICILAN UTANG (AMAN DARI BUG) ---
   const processInstallment = async () => {
       if (!user || !selectedDebt) return;
       const payVal = parseFloat(installmentAmount);
@@ -887,13 +887,11 @@ export default function App() {
               ...(isFullyPaid ? { status: 'paid', paidAt: Date.now() } : {}) 
           });
 
-          // Gunakan tanggal yang dipilih dari input modal cicilan
           const d = installmentDate ? new Date(installmentDate) : new Date();
-          
           const tData = {
               amount: payVal, 
               type: selectedDebt.debtType === 'lend' ? 'income' : 'expense',
-              walletId: installmentWalletId, // Wallet kustom yang dipilih user saat bayar
+              walletId: installmentWalletId, 
               currency: selectedDebt.currency,
               description: `Cicilan/Bayar: ${selectedDebt.personName} ` + (isFullyPaid ? '(Lunas)' : ''),
               category: 'Pelunasan',
@@ -970,7 +968,7 @@ export default function App() {
   // --- PERBAIKAN BUG PINDAH BULAN ---
   const changeHomeMonth = (increment) => {
     setHomeViewDate(prevDate => {
-        // Ambil tahun dan bulan saat ini, lalu set tanggalnya ke 1 biar gak ada "Month Overflow"
+        // Gunakan hari ke-1 (tanggal 1) saat menggeser bulan agar tidak kena Month Overflow (e.g. 31 Jan -> 31 Feb (invalid) -> loncat ke Mar)
         const newDate = new Date(prevDate.getFullYear(), prevDate.getMonth() + increment, 1);
         return newDate;
     });
@@ -981,7 +979,6 @@ export default function App() {
         const newDate = new Date(prevDate.getFullYear(), prevDate.getMonth(), prevDate.getDate());
         if (reportType === 'yearly') newDate.setFullYear(newDate.getFullYear() + increment);
         else if (reportType === 'monthly') {
-            // Fix bug loncat bulan untuk report
             newDate.setMonth(newDate.getMonth() + increment);
             newDate.setDate(1); 
         }
@@ -991,6 +988,7 @@ export default function App() {
     });
   };
 
+  // --- LOGIKA PENCARIAN & FILTER DI BERANDA ---
   const processedHomeTransactions = useMemo(() => {
     let result = transactions.filter(t => {
         const d = new Date(t.transactionDate || t.createdAt);
@@ -1484,6 +1482,389 @@ export default function App() {
     );
   };
 
+  const filteredByPeriod = useMemo(() => {
+    return transactions.filter(t => {
+      if (t.type === 'debt') return false; 
+      
+      const tDate = new Date(t.transactionDate || t.createdAt);
+      
+      if (reportType === 'daily') {
+          return tDate.getDate() === reportDate.getDate() && tDate.getMonth() === reportDate.getMonth() && tDate.getFullYear() === reportDate.getFullYear();
+      } else if (reportType === 'weekly') {
+          const current = new Date(reportDate);
+          const day = current.getDay();
+          const diff = current.getDate() - day + (day === 0 ? -6 : 1);
+          const startOfWeek = new Date(current);
+          startOfWeek.setDate(diff); startOfWeek.setHours(0, 0, 0, 0);
+          const endOfWeek = new Date(startOfWeek);
+          endOfWeek.setDate(startOfWeek.getDate() + 6); endOfWeek.setHours(23, 59, 59, 999);
+          return tDate >= startOfWeek && tDate <= endOfWeek;
+      } else if (reportType === 'monthly') {
+          return tDate.getMonth() === reportDate.getMonth() && tDate.getFullYear() === reportDate.getFullYear();
+      } else {
+          return tDate.getFullYear() === reportDate.getFullYear();
+      }
+    });
+  }, [transactions, reportDate, reportType]);
+
+  const reportTransactions = useMemo(() => {
+    return filteredByPeriod.filter(t => {
+        if ((t.currency || 'IDR') !== reportCurrency) return false;
+        if (reportWalletId !== 'all') {
+            if (t.walletId !== reportWalletId && t.toWalletId !== reportWalletId) return false;
+        }
+        return true;
+    });
+  }, [filteredByPeriod, reportCurrency, reportWalletId]);
+
+  const categoryStats = useMemo(() => {
+    const stats = {}; let totalExpense = 0;
+    
+    reportTransactions.forEach(t => {
+      if (t.type === 'expense') { 
+        if (t.items && t.items.length > 0) {
+            let itemsTotal = 0;
+            t.items.forEach(item => {
+                const itemPrice = parseFloat(item.price) || 0;
+                const itemCat = item.category || (t.categories && t.categories.length > 0 ? t.categories[0] : (t.category || 'Umum'));
+                
+                stats[itemCat] = (stats[itemCat] || 0) + itemPrice;
+                totalExpense += itemPrice;
+                itemsTotal += itemPrice;
+            });
+            const diff = parseFloat(t.amount) - itemsTotal;
+            if (diff > 0) {
+                const primaryCat = (t.categories && t.categories.length > 0) ? t.categories[0] : (t.category || 'Umum');
+                stats[primaryCat] = (stats[primaryCat] || 0) + diff;
+                totalExpense += diff;
+            }
+        } else {
+            const primaryCat = (t.categories && t.categories.length > 0) ? t.categories[0] : (t.category || 'Umum');
+            stats[primaryCat] = (stats[primaryCat] || 0) + parseFloat(t.amount); 
+            totalExpense += parseFloat(t.amount); 
+        }
+      } else if (t.type === 'transfer' && t.adminFee > 0) {
+        stats['Biaya Admin'] = (stats['Biaya Admin'] || 0) + parseFloat(t.adminFee);
+        totalExpense += parseFloat(t.adminFee);
+      }
+    });
+    
+    return Object.keys(stats)
+        .map(cat => ({ name: cat, amount: stats[cat], percentage: totalExpense > 0 ? (stats[cat] / totalExpense) * 100 : 0 }))
+        .sort((a, b) => b.amount - a.amount);
+  }, [reportTransactions]);
+
+  const reportSummary = useMemo(() => {
+    const inc = reportTransactions.filter(t => t.type === 'income').reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
+    const exp = reportTransactions.reduce((acc, curr) => {
+        if(curr.type === 'expense') return acc + parseFloat(curr.amount);
+        if(curr.type === 'transfer' && curr.adminFee > 0) return acc + parseFloat(curr.adminFee);
+        return acc;
+    }, 0);
+    return { income: inc, expense: exp, balance: inc - exp };
+  }, [reportTransactions]);
+
+  const changeReportPeriod = (increment) => {
+    setReportDate(prevDate => {
+        const newDate = new Date(prevDate.getFullYear(), prevDate.getMonth(), prevDate.getDate());
+        if (reportType === 'yearly') newDate.setFullYear(newDate.getFullYear() + increment);
+        else if (reportType === 'monthly') {
+            newDate.setMonth(newDate.getMonth() + increment);
+            newDate.setDate(1); 
+        }
+        else if (reportType === 'weekly') newDate.setDate(newDate.getDate() + (increment * 7));
+        else if (reportType === 'daily') newDate.setDate(newDate.getDate() + increment);
+        return newDate;
+    });
+  };
+
+  const getReportTitle = () => {
+    if (reportType === 'yearly') return reportDate.getFullYear();
+    else if (reportType === 'monthly') return reportDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+    else if (reportType === 'weekly') {
+        const current = new Date(reportDate);
+        const day = current.getDay();
+        const diff = current.getDate() - day + (day === 0 ? -6 : 1);
+        const start = new Date(current); start.setDate(diff); 
+        const end = new Date(start); end.setDate(start.getDate() + 6);
+        return start.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) + " - " + end.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+    } else if (reportType === 'daily') return reportDate.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+    return '';
+  };
+
+  const renderReportView = () => (
+    <div className="animate-in fade-in duration-300">
+      
+      <div className="bg-white rounded-full shadow-sm border border-gray-100 p-1 mb-3 mx-auto w-max max-w-full flex">
+          <button onClick={() => setReportType('daily')} className={"px-4 py-1.5 text-xs font-bold rounded-full transition-all " + (reportType === 'daily' ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}>Harian</button>
+          <button onClick={() => setReportType('weekly')} className={"px-4 py-1.5 text-xs font-bold rounded-full transition-all " + (reportType === 'weekly' ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}>Mingguan</button>
+          <button onClick={() => setReportType('monthly')} className={"px-4 py-1.5 text-xs font-bold rounded-full transition-all " + (reportType === 'monthly' ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-700")}>Bulanan</button>
+      </div>
+      
+      <div className="flex overflow-x-auto gap-2 mb-6 pb-2 hide-scrollbar px-1">
+         <button onClick={() => setReportWalletId('all')} className={"whitespace-nowrap px-4 py-1.5 text-[10px] uppercase tracking-wider font-bold rounded-full border transition-all " + (reportWalletId === 'all' ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>Semua Dompet</button>
+         {wallets.map(w => (
+             <button key={"rw-"+w.id} onClick={() => setReportWalletId(w.id)} className={"whitespace-nowrap px-4 py-1.5 text-[10px] uppercase tracking-wider font-bold rounded-full border transition-all " + (reportWalletId === w.id ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50")}>{w.name}</button>
+         ))}
+      </div>
+      
+      <div className="bg-gradient-to-br from-indigo-600 via-blue-600 to-blue-800 rounded-3xl shadow-xl p-6 mb-6 text-white relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+            <TrendingUp className="w-32 h-32" />
+        </div>
+        <div className="flex items-center justify-between mb-4 relative z-10">
+          <button onClick={() => changeReportPeriod(-1)} className="p-1 hover:bg-white/20 rounded-full transition-colors"><ChevronLeft className="w-5 h-5 text-blue-100" /></button>
+          <div className="text-center bg-white/10 backdrop-blur-md px-3 py-1 rounded-full"><h2 className="font-bold text-white text-xs">{getReportTitle()}</h2></div>
+          <button onClick={() => changeReportPeriod(1)} className="p-1 hover:bg-white/20 rounded-full transition-colors"><ChevronRight className="w-5 h-5 text-blue-100" /></button>
+        </div>
+        
+        <div className="text-center mb-6 relative z-10">
+          <p className="text-blue-200 text-xs font-medium mb-1">Arus Kas Bersih (Sisa Uang)</p>
+          <h3 className="text-3xl font-bold tracking-tight">
+             {reportSummary.balance >= 0 ? "+" : ""}{formatCurrency(reportSummary.balance, reportCurrency)}
+          </h3>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 relative z-10 border-t border-white/20 pt-4">
+            <div>
+                <p className="text-[10px] text-blue-200 flex items-center gap-1 mb-1"><TrendingUp className="w-3 h-3 text-emerald-400"/> Pemasukan</p>
+                <p className="font-bold text-sm">{formatCurrency(reportSummary.income, reportCurrency)}</p>
+            </div>
+            <div>
+                <p className="text-[10px] text-blue-200 flex items-center gap-1 mb-1"><TrendingDown className="w-3 h-3 text-rose-400"/> Pengeluaran</p>
+                <p className="font-bold text-sm">{formatCurrency(reportSummary.expense, reportCurrency)}</p>
+            </div>
+        </div>
+      </div>
+        
+      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div className="flex justify-between items-center mb-6">
+            <h3 className="font-bold text-gray-800 flex items-center gap-2"><PieChart className="w-4 h-4 text-blue-600" /> Distribusi Pengeluaran</h3>
+            <select value={reportCurrency} onChange={(e) => setReportCurrency(e.target.value)} className="bg-gray-50 text-xs font-bold text-blue-600 focus:outline-none border border-gray-200 rounded px-2 py-1">
+              {[...new Set(transactions.map(t => t.currency || defaultCurrency))].map(c => <option key={c} value={c}>{c}</option>)}
+              {transactions.length === 0 && <option value={defaultCurrency}>{defaultCurrency}</option>}
+            </select>
+        </div>
+
+        {categoryStats.length === 0 ? (
+            <div className="text-center py-8 text-gray-400 text-sm">Belum ada pengeluaran di periode/dompet ini.</div> 
+        ) : (
+          <div className="flex flex-col items-center">
+            <div className="relative w-40 h-40 rounded-full flex items-center justify-center mb-6 shadow-inner" style={{ 
+                background: `conic-gradient(${categoryStats.map((cat, i) => {
+                    const colors = ['#3b82f6', '#ef4444', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899', '#64748b'];
+                    const start = i === 0 ? 0 : categoryStats.slice(0, i).reduce((sum, c) => sum + c.percentage, 0);
+                    return `${colors[i % colors.length]} ${start}% ${start + cat.percentage}%`;
+                }).join(', ')})`
+            }}>
+                <div className="w-28 h-28 bg-white rounded-full flex flex-col items-center justify-center shadow-sm">
+                    <p className="text-[9px] text-gray-400 font-bold uppercase">Total</p>
+                    <p className="text-xs font-bold text-gray-800">{formatCurrency(reportSummary.expense, reportCurrency).split(',')[0]}</p>
+                </div>
+            </div>
+
+            <div className="w-full bg-purple-50 border border-purple-100 rounded-xl p-4 mb-4 flex gap-3">
+                <Sparkles className="w-5 h-5 text-purple-500 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-purple-800 font-medium leading-relaxed">
+                    💡 Insight: Pengeluaran terbesarmu habis untuk <b>{categoryStats[0].name}</b> ({Math.round(categoryStats[0].percentage)}%). 
+                    {reportSummary.balance < 0 ? " Awas, pengeluaranmu lebih besar dari pemasukan!" : " Pertahankan kebiasaan hematmu!"}
+                </p>
+            </div>
+            
+            <div className="w-full space-y-2">
+              {categoryStats.map((cat, i) => {
+                  const colors = ['bg-blue-500', 'bg-rose-500', 'bg-orange-500', 'bg-emerald-500', 'bg-purple-500', 'bg-pink-500', 'bg-slate-500'];
+                  const isExpanded = expandedId === 'cat-' + cat.name;
+                  
+                  const catTransactions = reportTransactions.filter(t => {
+                      if(t.type !== 'expense') return false;
+                      if(t.items && t.items.length > 0) return t.items.some(item => (item.category || (t.categories && t.categories.length > 0 ? t.categories[0] : (t.category || 'Umum'))) === cat.name);
+                      return ((t.categories && t.categories.length > 0 ? t.categories[0] : (t.category || 'Umum')) === cat.name);
+                  });
+
+                  return (
+                  <div key={cat.name} className="border border-gray-100 rounded-xl overflow-hidden bg-white">
+                      <button onClick={() => setExpandedId(isExpanded ? null : 'cat-' + cat.name)} className="w-full flex items-center justify-between p-3 hover:bg-gray-50 transition-colors">
+                          <div className="flex items-center gap-3">
+                              <div className={`w-3 h-3 rounded-full ${colors[i % colors.length]}`}></div>
+                              <span className="text-sm font-bold text-gray-700">{cat.name}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                              <span className="text-sm font-bold text-gray-900">{formatCurrency(cat.amount, reportCurrency)}</span>
+                              {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400"/> : <ChevronDown className="w-4 h-4 text-gray-400"/>}
+                          </div>
+                      </button>
+                      
+                      {isExpanded && (
+                          <div className="bg-gray-50 p-3 border-t border-gray-100">
+                              <ul className="space-y-2">
+                                  {catTransactions.map(t => (
+                                      <li key={"catrep-"+t.id} className="flex justify-between items-center text-xs">
+                                          <span className="text-gray-600 truncate mr-2">{t.description}</span>
+                                          <span className="font-semibold text-gray-800 flex-shrink-0">{formatCurrency(t.amount, t.currency)}</span>
+                                      </li>
+                                  ))}
+                              </ul>
+                          </div>
+                      )}
+                  </div>
+              )})}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderSettingsView = () => (
+    <div className="animate-in fade-in duration-300">
+      <h2 className="text-2xl font-bold text-gray-900 mb-6">Pengaturan</h2>
+      
+      {/* MENU BUKU UTANG & PIUTANG */}
+      <button onClick={() => setShowDebtModal(true)} className="w-full bg-gradient-to-r from-orange-500 to-rose-500 rounded-2xl shadow-md p-4 mb-6 relative overflow-hidden flex items-center justify-between group hover:shadow-lg transition-all text-left">
+        <div className="absolute top-0 right-0 p-2 opacity-20 pointer-events-none"><HandCoins className="w-20 h-20" /></div>
+        <div className="relative z-10 flex items-center gap-4">
+            <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm"><HandCoins className="w-6 h-6 text-white" /></div>
+            <div>
+                <h3 className="text-white font-bold text-lg">Buku Utang & Piutang</h3>
+                <p className="text-orange-100 text-xs">Pantau utang teman atau pinjamanmu.</p>
+            </div>
+        </div>
+        {activeDebts.length > 0 && (
+            <div className="bg-white text-rose-600 text-xs font-bold px-3 py-1.5 rounded-full shadow-sm relative z-10 flex items-center gap-1">
+               {activeDebts.length} Belum Lunas
+            </div>
+        )}
+      </button>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
+        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Akun Saya</h3>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={"w-12 h-12 rounded-full flex items-center justify-center " + (user?.isAnonymous ? "bg-gray-100" : "bg-blue-100")}>
+              <User className={"w-6 h-6 " + (user?.isAnonymous ? "text-gray-400" : "text-blue-600")} />
+            </div>
+            <div><p className="font-bold text-gray-900">{user?.isAnonymous ? 'Pengguna Tamu' : user?.displayName || 'Pengguna Google'}</p><p className="text-xs text-gray-500">{user?.isAnonymous ? 'Data tersimpan sementara' : user?.email}</p></div>
+          </div>
+          {user?.isAnonymous ? 
+            <button onClick={handleGoogleLogin} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-medium transition-colors flex items-center gap-2 shadow-sm"><LogIn className="w-4 h-4" /> Masuk Google</button> : 
+            <button onClick={handleLogout} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl text-xs font-medium transition-colors flex items-center gap-2"><LogOut className="w-4 h-4" /> Keluar</button>
+          }
+        </div>
+      </div>
+      
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
+        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2"><Globe className="w-4 h-4 text-gray-400" /> Regional</h3>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Mata Uang Default (Bawaan)</label>
+          <div className="relative">
+            <select value={defaultCurrency} onChange={(e) => handleSaveSettings('currency', e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-bold">
+               {currencies.map(c => <option key={c.code} value={c.code}>{c.code} ({c.name || c.symbol})</option>)}
+            </select>
+            <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
+        <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Manajemen Dompet</h3>
+            <button onClick={() => setShowWalletModal(true)} className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded hover:bg-blue-100">+ Dompet Baru</button>
+        </div>
+        <div className="space-y-2">
+            {wallets.map(w => (
+                <div key={"sett-w-"+w.id} className="flex justify-between items-center bg-gray-50 border border-gray-200 p-3 rounded-xl">
+                    <div>
+                        <p className="font-bold text-gray-800 text-sm">{w.name} <span className="text-[9px] bg-gray-200 text-gray-600 px-1 rounded ml-1">{w.currency}</span></p>
+                        <p className="text-[10px] text-gray-500 mt-0.5">Saldo Awal: {formatCurrency(w.initialBalance, w.currency)}</p>
+                    </div>
+                    <button onClick={() => handleDeleteWallet(w.id)} className="text-gray-400 hover:text-rose-500 p-1 bg-white rounded-lg shadow-sm border border-gray-100"><Trash2 className="w-4 h-4" /></button>
+                </div>
+            ))}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-purple-100 p-5 mb-6 relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none"><Sparkles className="w-16 h-16 text-purple-600" /></div>
+        <h3 className="text-sm font-bold text-purple-600 uppercase tracking-wider mb-2 flex items-center gap-2"><Sparkles className="w-4 h-4" /> Integrasi AI & Drive</h3>
+        <p className="text-xs text-gray-500 mb-4 pr-10">Kunci API Gemini diperlukan untuk scan teks struk. Webhook Apps Script diperlukan untuk menyimpan foto ke Drive.</p>
+        
+        <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Gemini API Key</label>
+              <input 
+                type="password" 
+                value={geminiKey} 
+                onChange={(e) => handleSaveSettings('gemini', e.target.value)} 
+                placeholder="AIzaSy..." 
+                className="w-full bg-purple-50/50 border border-purple-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all font-mono text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">URL Webhook Google Drive</label>
+              <input 
+                type="text" 
+                value={gasUrl} 
+                onChange={(e) => handleSaveSettings('gas', e.target.value)} 
+                placeholder="https://script.google.com/macros/s/..." 
+                className="w-full bg-blue-50/50 border border-blue-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono text-[10px]"
+              />
+            </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
+        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Kategori Label</h3>
+        <div className="space-y-3">
+          <button onClick={() => { setType('expense'); setShowCatModal(true); }} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-rose-50 border border-gray-200 hover:border-rose-200 transition-all group">
+            <div className="flex items-center gap-3">
+              <div className="bg-rose-100 p-2 rounded-lg group-hover:bg-rose-200 transition-colors"><Tag className="w-5 h-5 text-rose-600" /></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Label Pengeluaran</p><p className="text-xs text-gray-400">Atur pilihan label pengeluaran</p></div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-400" />
+          </button>
+          <button onClick={() => { setType('income'); setShowCatModal(true); }} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-200 hover:border-emerald-200 transition-all group">
+            <div className="flex items-center gap-3">
+              <div className="bg-emerald-100 p-2 rounded-lg group-hover:bg-emerald-200 transition-colors"><Tag className="w-5 h-5 text-emerald-600" /></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Label Pemasukan</p><p className="text-xs text-gray-400">Atur pilihan label pendapatan</p></div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-400" />
+          </button>
+        </div>
+      </div>
+
+      {/* MANAJEMEN DATA & BACKUP - DIKEMBALIKAN */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
+        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2"><Database className="w-4 h-4 text-gray-400" /> Manajemen Data</h3>
+        
+        <div className="grid grid-cols-2 gap-3 mb-4">
+            <button onClick={downloadCSV} className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 rounded-xl transition-all group">
+                <Download className="w-6 h-6 text-gray-400 group-hover:text-blue-600 mb-2" />
+                <span className="text-[10px] font-bold text-gray-600 group-hover:text-blue-700">Export CSV</span>
+            </button>
+            
+            <button onClick={handleImportClick} className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-emerald-50 border border-gray-200 hover:border-emerald-200 rounded-xl transition-all group relative">
+                <Upload className="w-6 h-6 text-gray-400 group-hover:text-emerald-600 mb-2" />
+                <span className="text-[10px] font-bold text-gray-600 group-hover:text-emerald-700">Restore CSV</span>
+            </button>
+            {/* Input file hidden untuk fungsi import */}
+            <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+        </div>
+        
+        <button onClick={() => setShowDummyModal(true)} className="w-full py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-600 font-bold rounded-xl border border-purple-200 transition-colors text-xs flex items-center justify-center gap-2">
+            <Sparkles className="w-4 h-4" /> Isi Data Demo (Testing)
+        </button>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-red-100 p-5 mb-6">
+        <h3 className="text-sm font-bold text-red-500 uppercase tracking-wider mb-4 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> Zona Bahaya</h3>
+        <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data & Dompet</button>
+      </div>
+      
+      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v5.6 (Stable UI Edition)</div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-800 md:p-8 pb-24 relative">
       <div className="max-w-md mx-auto relative min-h-screen shadow-xl md:rounded-[2rem] bg-gray-50 overflow-hidden">
@@ -1566,7 +1947,7 @@ export default function App() {
             </div>
         )}
 
-        {/* MODAL INPUT CICILAN / PELUNASAN (DIPERBARUI) */}
+        {/* MODAL INPUT CICILAN / PELUNASAN */}
         {showInstallmentModal && selectedDebt && (
             <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
                 <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95">
@@ -1735,7 +2116,6 @@ export default function App() {
                                                 setSelectedDebt(debt);
                                                 setInstallmentAmount(remainingAmt.toString());
                                                 setInstallmentDate(getCurrentDate());
-                                                // Default ke wallet yang dipakai saat utang dibuat, atau biarkan kosong biar user milih
                                                 setInstallmentWalletId(wallets.length > 0 ? wallets[0].id : '');
                                                 setShowInstallmentModal(true);
                                             }} 
@@ -1819,41 +2199,6 @@ export default function App() {
           </div>
         )}
 
-        {showCatModal && (
-          <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl max-h-[80vh] overflow-y-auto">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-lg">Buat Label {type === 'expense' ? 'Pengeluaran' : 'Pemasukan'}</h3>
-                <button onClick={() => setShowCatModal(false)}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
-              </div>
-              <div className="mb-6">
-                <form onSubmit={handleSaveCategory}>
-                  <label className="block text-xs font-medium text-gray-500 mb-2">Nama Label Baru</label>
-                  <div className="flex gap-2">
-                    <input autoFocus type="text" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} placeholder="Contoh: Belanja Bulanan" className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
-                    <button type="submit" disabled={!newCatName.trim()} className="px-4 py-2.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"><Plus className="w-5 h-5" /></button>
-                  </div>
-                </form>
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Label Kustom Anda</h4>
-                {customCategories.filter(c => c.type === type).length === 0 ? (
-                  <div className="text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200"><p className="text-xs text-gray-400">Belum ada label buatan sendiri.</p></div>
-                ) : (
-                  <ul className="space-y-2">
-                    {customCategories.filter(c => c.type === type).map((c) => (
-                      <li key={c.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100 group hover:border-blue-200 transition-colors">
-                        <span className="text-sm font-medium text-gray-700">{c.name}</span>
-                        <button onClick={() => handleDeleteCategory(c.id, c.name)} className="text-gray-400 hover:text-rose-500 p-1.5 hover:bg-rose-50 rounded-lg transition-all"><Trash2 className="w-4 h-4" /></button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
         <div className="px-4 md:px-0">
           {view === 'home' && renderHomeView()}
           {view === 'report' && <div className="mt-4">{renderReportView()}</div>}
@@ -1876,4 +2221,4 @@ export default function App() {
       </div>
     </div>
   );
-                                }
+                                                                  }
