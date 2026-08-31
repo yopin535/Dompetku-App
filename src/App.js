@@ -5,7 +5,7 @@ import {
   Download, Upload, FileText, CheckCircle, XCircle, X, Settings, Sparkles,
   LogOut, LogIn, AlertTriangle, User, Check, CloudOff, RefreshCw, Globe, Edit2, Camera,
   ChevronDown, ChevronUp, Receipt, ArrowRightLeft, CreditCard, Landmark, Eye, EyeOff, Image as ImageIcon,
-  HandCoins, Users, CheckSquare, Search, SlidersHorizontal, History
+  HandCoins, Users, CheckSquare, Search, SlidersHorizontal, History, LineChart, Briefcase, ArrowUpCircle, ArrowDownCircle
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -57,6 +57,7 @@ export default function App() {
   const [transactions, setTransactions] = useState([]);
   const [customCategories, setCustomCategories] = useState([]);
   const [wallets, setWallets] = useState([]);
+  const [portfolios, setPortfolios] = useState([]); // State Portofolio Investasi
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('home'); 
   const [notification, setNotification] = useState(null);
@@ -89,12 +90,20 @@ export default function App() {
   const [filterType, setFilterType] = useState('all'); 
   const [sortBy, setSortBy] = useState('date_desc'); 
 
-  // Modal Cicilan
+  // Modal Cicilan Utang
   const [showInstallmentModal, setShowInstallmentModal] = useState(false);
   const [selectedDebt, setSelectedDebt] = useState(null);
   const [installmentAmount, setInstallmentAmount] = useState('');
   const [installmentDate, setInstallmentDate] = useState('');
   const [installmentWalletId, setInstallmentWalletId] = useState('');
+
+  // Modals Investasi
+  const [showPortfolioModal, setShowPortfolioModal] = useState(false);
+  const [newPortfolioName, setNewPortfolioName] = useState('');
+  const [showInvestActionModal, setShowInvestActionModal] = useState(false);
+  const [investActionType, setInvestActionType] = useState('topup'); // 'topup', 'withdraw', 'update'
+  const [activePortfolio, setActivePortfolio] = useState(null);
+  const [investAmount, setInvestAmount] = useState('');
 
   // Filter Wallet untuk Report
   const [reportWalletId, setReportWalletId] = useState('all');
@@ -254,7 +263,14 @@ export default function App() {
         setLoading(false);
     });
 
-    return () => { unsubTrans(); unsubCat(); unsubWal(); };
+    // Listener Portfolio Investasi
+    const portRef = collection(db, 'artifacts', appId, 'users', user.uid, 'portfolios');
+    const unsubPort = onSnapshot(portRef, (snapshot) => {
+      const ports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setPortfolios(ports);
+    });
+
+    return () => { unsubTrans(); unsubCat(); unsubWal(); unsubPort(); };
   }, [user, defaultCurrency]);
 
   const formatCurrency = (number, currencyCode = defaultCurrency) => {
@@ -289,12 +305,19 @@ export default function App() {
            } else if (t.debtType === 'borrow') { 
                if(balances[t.walletId] !== undefined) balances[t.walletId] += parseFloat(t.amount || 0);
            }
+       } else if (t.type === 'invest_deposit') {
+           // Mengurangi saldo dompet
+           if(balances[t.walletId] !== undefined) balances[t.walletId] -= parseFloat(t.amount || 0);
+       } else if (t.type === 'invest_withdraw') {
+           // Menambah saldo dompet
+           if(balances[t.walletId] !== undefined) balances[t.walletId] += parseFloat(t.amount || 0);
        }
     });
     return balances;
   }, [wallets, transactions]);
 
-  const totalBalancesByCurrency = useMemo(() => {
+  // Kalkulasi Total Kas (Hanya Uang Tunai/Bank)
+  const totalCashByCurrency = useMemo(() => {
       const totals = {};
       wallets.forEach(w => {
           const curr = w.currency || defaultCurrency;
@@ -302,6 +325,25 @@ export default function App() {
       });
       return totals;
   }, [wallets, walletBalances, defaultCurrency]);
+
+  // Kalkulasi Total Investasi (Nilai Saat Ini)
+  const totalInvestmentsByCurrency = useMemo(() => {
+      const totals = {};
+      portfolios.forEach(p => {
+          const curr = p.currency || defaultCurrency;
+          totals[curr] = (totals[curr] || 0) + (parseFloat(p.currentValue) || 0);
+      });
+      return totals;
+  }, [portfolios, defaultCurrency]);
+
+  // Kalkulasi Total Net Worth (Kas + Investasi)
+  const totalNetWorthByCurrency = useMemo(() => {
+      const totals = { ...totalCashByCurrency };
+      Object.keys(totalInvestmentsByCurrency).forEach(curr => {
+          totals[curr] = (totals[curr] || 0) + totalInvestmentsByCurrency[curr];
+      });
+      return totals;
+  }, [totalCashByCurrency, totalInvestmentsByCurrency]);
 
   const activeDebts = useMemo(() => {
       return transactions.filter(t => t.type === 'debt' && t.status === 'unpaid').sort((a,b) => b.createdAt - a.createdAt);
@@ -375,234 +417,6 @@ export default function App() {
           await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'wallets', id));
           setNotification({ type: 'success', message: 'Dompet dihapus.' });
       } catch (error) { setSyncStatus('offline'); }
-  };
-
-  const downloadCSV = () => {
-    if (transactions.length === 0) { setNotification({ type: 'error', message: 'Tidak ada data.' }); return; }
-    
-    const headers = "id,iso_date,tanggal_display,deskripsi,kategori,tipe,mata_uang,jumlah,dompet_asal,dompet_tujuan,biaya_admin,rincian_item,url_struk,debtType,personName,dueDate,status,paidAmount,isSettlement,settledDebtId";
-    const csvRows = [headers];
-    
-    transactions.forEach(t => {
-      const dateObj = new Date(t.transactionDate || t.createdAt);
-      const isoDate = dateObj.toISOString().split('T')[0];
-      const catString = t.categories ? t.categories.join(' & ') : (t.category || 'Umum');
-      const cleanDesc = (t.description||'').split('"').join('""');
-      
-      let itemsString = "";
-      if (t.items && t.items.length > 0) {
-          itemsString = t.items.map(i => {
-              const cleanName = (i.name || '').split('"').join('""');
-              return cleanName + "::" + (i.price || 0) + "::" + (i.category || '');
-          }).join("||");
-      }
-      
-      const row = [
-          t.id || '',
-          isoDate,
-          `"${t.date || ''}"`,
-          `"${cleanDesc}"`,
-          `"${catString}"`,
-          t.type || '',
-          (t.currency || 'IDR'),
-          t.amount || 0,
-          (t.walletId || ''),
-          (t.toWalletId || ''),
-          (t.adminFee || 0),
-          `"${itemsString}"`,
-          `"${(t.receiptUrl || '')}"`,
-          (t.debtType || ''),
-          `"${(t.personName || '')}"`,
-          (t.dueDate || ''),
-          (t.status || ''),
-          (t.paidAmount || 0),
-          (t.isSettlement || false),
-          (t.settledDebtId || '')
-      ].join(",");
-      csvRows.push(row);
-    });
-    
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'Backup_Dompetku_V5.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleImportClick = () => {
-    if(fileInputRef.current) fileInputRef.current.click();
-  };
-
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const rows = event.target.result.split('\n');
-        let importedCount = 0;
-        setLoading(true); setSyncStatus('saving');
-        
-        for (let i = 1; i < rows.length; i++) {
-          const rowText = rows[i].trim();
-          if (!rowText) continue;
-          
-          const cols = []; let cur = ''; let inQuote = false;
-          for (let j = 0; j < rowText.length; j++) {
-              const char = rowText[j];
-              if (char === '"' && rowText[j+1] === '"') { cur += '""'; j++; } 
-              else if (char === '"') { inQuote = !inQuote; } 
-              else if (char === ',' && !inQuote) { cols.push(cur); cur = ''; } 
-              else { cur += char; }
-          }
-          cols.push(cur);
-
-          if (cols && cols.length >= 6) {
-            const clean = (str) => {
-                if(!str) return '';
-                let s = str.trim();
-                if(s.startsWith('"') && s.endsWith('"')) s = s.substring(1, s.length - 1);
-                return s.split('""').join('"');
-            };
-            
-            const hasIdCol = cols[0].length > 15; 
-            const offset = hasIdCol ? 1 : 0; 
-
-            const isoDate = clean(cols[offset]);
-            const description = clean(cols[offset+2]);
-            const categoryRaw = clean(cols[offset+3]);
-            const typeRaw = clean(cols[offset+4]);
-            const type = typeRaw.includes('income') ? 'income' : (typeRaw.includes('transfer') ? 'transfer' : (typeRaw.includes('debt') ? 'debt' : 'expense'));
-            const catsArray = categoryRaw.split(' & ').map(c => c.trim()).filter(Boolean);
-
-            let curr = 'IDR'; let amt = 0; 
-            let wId = wallets[0]?.id || ''; let toWId = ''; let aFee = 0; let parsedItems = []; let recUrl = null;
-            let debtT = '', pName = '', dDate = '', st = '', pAmt = 0, isSet = false, setDId = '';
-
-            if (cols.length >= offset + 6) {
-                curr = clean(cols[offset+5]); amt = parseFloat(clean(cols[offset+6]));
-                wId = clean(cols[offset+7]) || wId;
-                toWId = clean(cols[offset+8]);
-                aFee = parseFloat(clean(cols[offset+9]) || 0);
-                const itemsRaw = clean(cols[offset+10]);
-                if (itemsRaw) parsedItems = itemsRaw.split('||').map(itemStr => { 
-                    const parts = itemStr.split('::'); 
-                    return { name: parts[0] || 'Item', price: parseFloat(parts[1]) || 0, category: parts[2] || '' }; 
-                });
-                recUrl = clean(cols[offset+11]);
-                
-                if(cols.length >= offset + 18) {
-                    debtT = clean(cols[offset+12]);
-                    pName = clean(cols[offset+13]);
-                    dDate = clean(cols[offset+14]);
-                    st = clean(cols[offset+15]);
-                    pAmt = parseFloat(clean(cols[offset+16]) || 0);
-                    isSet = clean(cols[offset+17]) === 'true';
-                    setDId = clean(cols[offset+18]);
-                }
-            }
-            
-            if (isoDate && description && !isNaN(amt)) {
-              const dateObj = new Date(isoDate);
-              await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), {
-                description, amount: amt, type,
-                categories: catsArray.length > 0 ? catsArray : ['Umum'],
-                category: catsArray[0] || 'Umum',
-                currency: curr, walletId: wId, toWalletId: toWId, adminFee: aFee, items: parsedItems,
-                receiptUrl: recUrl,
-                debtType: debtT, personName: pName, dueDate: dDate, status: st, paidAmount: pAmt,
-                isSettlement: isSet, settledDebtId: setDId,
-                date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
-                transactionDate: dateObj.getTime(), createdAt: Date.now()
-              });
-              importedCount++;
-            }
-          }
-        }
-        setLoading(false); setNotification({ type: 'success', message: 'Berhasil mengimpor ' + importedCount + ' transaksi.' });
-        e.target.value = null;
-      } catch (error) {
-        console.error(error);
-        setLoading(false); setNotification({ type: 'error', message: 'Gagal import file CSV.' });
-      } finally { setSyncStatus('synced'); }
-    };
-    reader.readAsText(file);
-  };
-
-  const handleResetData = async () => {
-    if (!user) return;
-    setLoading(true); setSyncStatus('saving'); setShowResetModal(false);
-    try {
-      const batch = writeBatch(db);
-      const transSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'));
-      transSnapshot.forEach((doc) => batch.delete(doc.ref));
-      const catSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'categories'));
-      catSnapshot.forEach((doc) => batch.delete(doc.ref));
-      const walSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'wallets'));
-      walSnapshot.forEach((doc) => batch.delete(doc.ref));
-      
-      await batch.commit();
-      setTransactions([]); setCustomCategories([]); setWallets([]);
-      setNotification({ type: 'success', message: 'Semua Data direset bersih.' });
-    } catch (error) {
-      setNotification({ type: 'error', message: 'Gagal mereset.' });
-    } finally { setLoading(false); setSyncStatus('synced'); }
-  };
-
-  const confirmGenerateDummy = async () => {
-    if (!user) return;
-    setShowDummyModal(false); setLoading(true); setSyncStatus('saving');
-    try {
-      const w1 = wallets[0]?.id || '';
-      const w2 = wallets.length > 1 ? wallets[1].id : w1;
-      
-      const isIDR = defaultCurrency === 'IDR';
-      const multiplier = isIDR ? 100 : 1; 
-      const baseSalary = isIDR ? 5000000 : 250000;
-      const curr = defaultCurrency;
-
-      const dummyData = [
-        { desc: 'Gaji Bulanan', amount: baseSalary, type: 'income', cats: ['Gaji'], dayOffset: 6, curr: curr, walletId: w1, items: [] },
-        { desc: 'Belanja Supermarket (TRIAL)', amount: 4500 * multiplier, type: 'expense', cats: ['Belanja', 'Makanan'], dayOffset: 3, curr: curr, walletId: w2, items: [
-            { name: 'Beras 5kg', price: 2000 * multiplier, category: 'Makanan' },
-            { name: 'Telur Ayam 1 Pack', price: 300 * multiplier, category: 'Makanan' },
-            { name: 'Susu Murni 1L', price: 200 * multiplier, category: 'Makanan' },
-            { name: 'Daging Ayam', price: 1000 * multiplier, category: 'Makanan' },
-            { name: 'Sabun & Odol', price: 1000 * multiplier, category: 'Belanja' }
-        ]},
-        { desc: 'Makan Siang (Matsuya/Warteg)', amount: 600 * multiplier, type: 'expense', cats: ['Makanan'], dayOffset: 1, curr: curr, walletId: w2, items: [] },
-        { desc: 'Top-up Kartu Transport', amount: 2000 * multiplier, type: 'expense', cats: ['Transportasi'], dayOffset: 2, curr: curr, walletId: w1, items: [] }
-      ];
-
-      const now = new Date();
-      for (const item of dummyData) {
-        const dateObj = new Date(now); dateObj.setDate(dateObj.getDate() - item.dayOffset);
-        
-        const tData = {
-          description: item.desc, amount: item.amount, type: item.type, 
-          categories: item.cats, category: item.cats[0] || 'Umum', currency: item.currency || item.curr,
-          walletId: item.walletId,
-          items: item.items,
-          date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
-          transactionDate: dateObj.getTime(), createdAt: Date.now()
-        };
-
-        if (item.type === 'transfer') {
-            tData.toWalletId = item.toWalletId;
-            tData.adminFee = item.adminFee;
-            tData.receivedAmount = item.receivedAmount;
-            tData.targetCurrency = item.targetCurrency;
-        }
-
-        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), tData);
-      }
-      setNotification({ type: 'success', message: 'Data demo realistis ditambahkan.' });
-    } catch (error) {
-      setNotification({ type: 'error', message: 'Gagal membuat demo.' });
-    } finally { setLoading(false); setSyncStatus('synced'); }
   };
 
   const compressImage = (file) => {
@@ -886,10 +700,11 @@ export default function App() {
           });
 
           const d = installmentDate ? new Date(installmentDate) : new Date();
+          
           const tData = {
               amount: payVal, 
               type: selectedDebt.debtType === 'lend' ? 'income' : 'expense',
-              walletId: installmentWalletId, 
+              walletId: installmentWalletId,
               currency: selectedDebt.currency,
               description: `Cicilan/Bayar: ${selectedDebt.personName} ` + (isFullyPaid ? '(Lunas)' : ''),
               category: 'Pelunasan',
@@ -911,6 +726,84 @@ export default function App() {
       } catch (e) {
           console.error(e);
           setNotification({type: 'error', message: 'Gagal memproses cicilan.'});
+          setSyncStatus('offline');
+      }
+  };
+
+  // --- FUNGSI INVESTASI ---
+  const handleSavePortfolio = async (e) => {
+      e.preventDefault();
+      if (!newPortfolioName || !user) return;
+      setSyncStatus('saving');
+      try {
+          await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'portfolios'), { 
+              name: newPortfolioName, 
+              currency: defaultCurrency, 
+              totalInvested: 0, 
+              currentValue: 0,
+              createdAt: Date.now() 
+          });
+          setNewPortfolioName(''); setShowPortfolioModal(false);
+          setNotification({ type: 'success', message: 'Portofolio investasi dibuat.' });
+      } catch (error) { setSyncStatus('offline'); }
+  };
+
+  const processInvestAction = async () => {
+      if (!user || !activePortfolio) return;
+      const amt = parseFloat(investAmount);
+      
+      setSyncStatus('saving');
+      try {
+          if (investActionType === 'update') {
+              if (isNaN(amt) || amt < 0) { setNotification({type: 'error', message: 'Nilai tidak valid'}); return; }
+              // Update Nilai Mark-to-Market
+              await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'portfolios', activePortfolio.id), { 
+                  currentValue: amt 
+              });
+              setNotification({type: 'success', message: 'Nilai portofolio diperbarui.'});
+          } else {
+              if (isNaN(amt) || amt <= 0 || !walletId) { setNotification({type: 'error', message: 'Isi nominal dan pilih dompet.'}); return; }
+              
+              const d = date ? new Date(date) : new Date();
+              const isTopup = investActionType === 'topup';
+              
+              // 1. Buat Transaksi di Dompet
+              const tData = {
+                  amount: amt, 
+                  type: isTopup ? 'invest_deposit' : 'invest_withdraw',
+                  walletId: walletId,
+                  currency: activePortfolio.currency || defaultCurrency,
+                  description: `${isTopup ? 'Beli/Top Up' : 'Jual/Tarik'} Aset: ${activePortfolio.name}`,
+                  category: 'Investasi',
+                  categories: ['Investasi'],
+                  date: d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+                  transactionDate: d.getTime(),
+                  createdAt: Date.now(),
+                  portfolioId: activePortfolio.id
+              };
+              await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), tData);
+
+              // 2. Update Nilai & Modal Portofolio
+              const currentModal = parseFloat(activePortfolio.totalInvested) || 0;
+              const currentVal = parseFloat(activePortfolio.currentValue) || 0;
+              
+              const newModal = isTopup ? currentModal + amt : Math.max(0, currentModal - amt);
+              const newVal = isTopup ? currentVal + amt : Math.max(0, currentVal - amt);
+
+              await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'portfolios', activePortfolio.id), { 
+                  totalInvested: newModal,
+                  currentValue: newVal
+              });
+              
+              setNotification({type: 'success', message: isTopup ? 'Berhasil Top Up Modal' : 'Dana berhasil ditarik'});
+          }
+          setShowInvestActionModal(false);
+          setInvestAmount('');
+          setDate(getCurrentDate());
+          setWalletId('');
+      } catch (e) {
+          console.error(e);
+          setNotification({type: 'error', message: 'Gagal memproses investasi.'});
           setSyncStatus('offline');
       }
   };
@@ -965,8 +858,21 @@ export default function App() {
 
   const changeHomeMonth = (increment) => {
     setHomeViewDate(prevDate => {
-        // Amankan kalender dari bug loncat bulan di tgl 31
         const newDate = new Date(prevDate.getFullYear(), prevDate.getMonth() + increment, 1);
+        return newDate;
+    });
+  };
+
+  const changeReportPeriod = (increment) => {
+    setReportDate(prevDate => {
+        const newDate = new Date(prevDate.getFullYear(), prevDate.getMonth(), prevDate.getDate());
+        if (reportType === 'yearly') newDate.setFullYear(newDate.getFullYear() + increment);
+        else if (reportType === 'monthly') {
+            newDate.setMonth(newDate.getMonth() + increment);
+            newDate.setDate(1); 
+        }
+        else if (reportType === 'weekly') newDate.setDate(newDate.getDate() + (increment * 7));
+        else if (reportType === 'daily') newDate.setDate(newDate.getDate() + increment);
         return newDate;
     });
   };
@@ -1040,9 +946,9 @@ export default function App() {
          <div className="relative z-10">
             <div className="flex justify-between items-start mb-1">
                <div className="flex items-center gap-2">
-                  <p className="text-xs text-blue-200 font-medium">Total Kekayaan Bersih ({defaultCurrency})</p>
+                  <p className="text-[11px] text-blue-200 font-bold uppercase tracking-wider">Kekayaan Bersih ({defaultCurrency})</p>
                   <button onClick={() => setHideBalance(!hideBalance)} className="text-blue-200 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors">
-                     {hideBalance ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                     {hideBalance ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>
                </div>
                <div className="flex items-center gap-2">
@@ -1087,22 +993,18 @@ export default function App() {
                     </div>
                 </div>
             ) : (
-                <div className="flex items-baseline gap-2 mt-2 animate-in fade-in duration-200">
-                   <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-                      {hideBalance ? '••••••••' : formatCurrency(totalBalancesByCurrency[defaultCurrency] || 0, defaultCurrency)}
+                <div className="flex flex-col mt-1 animate-in fade-in duration-200">
+                   <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-2">
+                      {hideBalance ? '••••••••' : formatCurrency(totalNetWorthByCurrency[defaultCurrency] || 0, defaultCurrency)}
                    </h1>
+                   <div className="flex items-center gap-3 text-[10px] font-medium text-blue-100 bg-black/10 w-max px-3 py-1.5 rounded-full backdrop-blur-sm border border-white/10">
+                       <span className="flex items-center gap-1"><Wallet className="w-3 h-3 text-blue-300"/> Kas: {hideBalance ? '•••' : formatCurrency(totalCashByCurrency[defaultCurrency] || 0, defaultCurrency)}</span>
+                       <span className="w-1 h-1 bg-blue-400 rounded-full"></span>
+                       <span className="flex items-center gap-1"><Briefcase className="w-3 h-3 text-emerald-300"/> Aset: {hideBalance ? '•••' : formatCurrency(totalInvestmentsByCurrency[defaultCurrency] || 0, defaultCurrency)}</span>
+                   </div>
                 </div>
             )}
             
-            {!isSearchOpen && Object.keys(totalBalancesByCurrency).length > 1 && (
-               <div className="mt-2.5 flex flex-wrap gap-2 animate-in fade-in duration-300">
-                  {Object.keys(totalBalancesByCurrency).filter(c => c !== defaultCurrency).map(c => (
-                     <span key={c} className="text-[10px] font-medium bg-black/20 px-2 py-1 rounded-full border border-white/10 backdrop-blur-md">
-                        {hideBalance ? '•••' : formatCurrency(totalBalancesByCurrency[c], c)}
-                     </span>
-                  ))}
-               </div>
-            )}
          </div>
       </div>
     );
@@ -1244,7 +1146,7 @@ export default function App() {
                    </div>
                    
                    <div>
-                       <label className="block text-[10px] font-bold text-gray-500 mb-1">TOTAL NOMINAL {wAsal ? `(${wAsal.currency})` : ''}</label>
+                       <label className="block text-[10px] font-bold text-gray-500 mb-1">NOMINAL {wAsal ? `(${wAsal.currency})` : ''}</label>
                        <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500 transition-all font-bold text-gray-800 text-lg" />
                    </div>
 
@@ -1373,6 +1275,7 @@ export default function App() {
                     {group.items.map((t) => {
                       const isTransfer = t.type === 'transfer';
                       const isDebt = t.type === 'debt';
+                      const isInvest = t.type.includes('invest');
                       const hasItems = t.items && t.items.length > 0;
                       const isExpanded = expandedId === t.id;
                       const dompetAsal = wallets.find(w => w.id === t.walletId);
@@ -1381,17 +1284,27 @@ export default function App() {
                       <div key={t.id} className="group bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all overflow-hidden relative">
                         <div className="p-4 flex items-center justify-between">
                             <div className="flex items-center gap-4 w-2/3">
-                              <div className={"w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 " + (isTransfer ? "bg-blue-50 text-blue-600" : isDebt ? "bg-orange-50 text-orange-600" : (t.type === 'income' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"))}>
-                                 {isTransfer ? <ArrowRightLeft className="w-4 h-4" /> : isDebt ? <HandCoins className="w-4 h-4" /> : (t.type === 'income' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />)}
+                              <div className={"w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 " + 
+                                  (isTransfer ? "bg-blue-50 text-blue-600" : 
+                                  isDebt ? "bg-orange-50 text-orange-600" : 
+                                  isInvest ? "bg-purple-50 text-purple-600" :
+                                  (t.type === 'income' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"))}>
+                                 {isTransfer ? <ArrowRightLeft className="w-4 h-4" /> : 
+                                  isDebt ? <HandCoins className="w-4 h-4" /> : 
+                                  isInvest ? <Briefcase className="w-4 h-4" /> :
+                                  (t.type === 'income' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />)}
                               </div>
                               <div className="min-w-0">
                                 <h4 className="font-semibold text-gray-800 text-sm truncate">{t.description}</h4>
                                 <div className="flex flex-wrap gap-1 mt-1">
                                   {isFlatList && <span className="text-[9px] px-1.5 py-0.5 bg-gray-800 text-white rounded font-bold">{t.date}</span>}
+                                  
                                   {isTransfer ? (
                                       <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded font-bold">Transfer</span>
                                   ) : isDebt ? (
                                       <span className={"text-[9px] px-1.5 py-0.5 border rounded font-bold " + (t.status === 'paid' ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-orange-50 text-orange-600 border-orange-100")}>{t.status === 'paid' ? 'Lunas' : 'Belum Lunas'}</span>
+                                  ) : isInvest ? (
+                                      <span className="text-[9px] px-1.5 py-0.5 bg-purple-50 text-purple-600 border border-purple-100 rounded font-bold">Investasi</span>
                                   ) : (
                                     (t.categories || (t.category ? [t.category] : ['Umum'])).map(catLabel => (
                                         <span key={t.id + "-" + catLabel} className="text-[9px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">{catLabel}</span>
@@ -1402,22 +1315,22 @@ export default function App() {
                               </div>
                             </div>
                             <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                              <span className={"font-bold text-sm " + (isTransfer ? "text-gray-700" : isDebt ? (t.debtType === 'lend' ? "text-rose-600" : "text-emerald-600") : (t.type === 'income' ? "text-emerald-600" : "text-rose-600"))}>
-                                 {isTransfer ? "" : isDebt ? (t.debtType === 'lend' ? "-" : "+") : (t.type === 'income' ? "+" : "-")}{formatCurrency(t.amount, t.currency)}
+                              <span className={"font-bold text-sm " + (isTransfer ? "text-gray-700" : isDebt ? (t.debtType === 'lend' ? "text-rose-600" : "text-emerald-600") : isInvest ? (t.type === 'invest_deposit' ? "text-rose-600" : "text-emerald-600") : (t.type === 'income' ? "text-emerald-600" : "text-rose-600"))}>
+                                 {isTransfer ? "" : isDebt ? (t.debtType === 'lend' ? "-" : "+") : isInvest ? (t.type === 'invest_deposit' ? "-" : "+") : (t.type === 'income' ? "+" : "-")}{formatCurrency(t.amount, t.currency)}
                               </span>
                               <div className="flex items-center gap-2 mt-1">
-                                  {hasItems && !isTransfer && !isDebt && (
+                                  {hasItems && !isTransfer && !isDebt && !isInvest && (
                                       <button onClick={() => toggleExpand(t.id)} className="text-[10px] flex items-center gap-0.5 text-blue-600 font-medium bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
                                           Nota {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                                       </button>
                                   )}
-                                  {!t.isSettlement && <button onClick={() => handleEditClick(t)} className="text-gray-300 hover:text-blue-500 transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>}
+                                  {!t.isSettlement && !isInvest && <button onClick={() => handleEditClick(t)} className="text-gray-300 hover:text-blue-500 transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>}
                                   <button onClick={() => handleDelete(t.id)} className="text-gray-300 hover:text-rose-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                               </div>
                             </div>
                         </div>
                         
-                        {hasItems && !isTransfer && !isDebt && isExpanded && (
+                        {hasItems && !isTransfer && !isDebt && !isInvest && isExpanded && (
                             <div className="bg-blue-50/30 border-t border-gray-100 p-4 animate-in slide-in-from-top-2">
                                 <div className="flex justify-between items-center mb-2">
                                     <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center gap-1"><Receipt className="w-3 h-3" /> Rincian Item</p>
@@ -1466,7 +1379,7 @@ export default function App() {
 
   const filteredByPeriod = useMemo(() => {
     return transactions.filter(t => {
-      if (t.type === 'debt') return false; 
+      if (t.type === 'debt' || t.type.includes('invest')) return false; 
       
       const tDate = new Date(t.transactionDate || t.createdAt);
       
@@ -1545,34 +1458,6 @@ export default function App() {
     }, 0);
     return { income: inc, expense: exp, balance: inc - exp };
   }, [reportTransactions]);
-
-  const changeReportPeriod = (increment) => {
-    setReportDate(prevDate => {
-        const newDate = new Date(prevDate.getFullYear(), prevDate.getMonth(), prevDate.getDate());
-        if (reportType === 'yearly') newDate.setFullYear(newDate.getFullYear() + increment);
-        else if (reportType === 'monthly') {
-            newDate.setMonth(newDate.getMonth() + increment);
-            newDate.setDate(1); 
-        }
-        else if (reportType === 'weekly') newDate.setDate(newDate.getDate() + (increment * 7));
-        else if (reportType === 'daily') newDate.setDate(newDate.getDate() + increment);
-        return newDate;
-    });
-  };
-
-  const getReportTitle = () => {
-    if (reportType === 'yearly') return reportDate.getFullYear();
-    else if (reportType === 'monthly') return reportDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
-    else if (reportType === 'weekly') {
-        const current = new Date(reportDate);
-        const day = current.getDay();
-        const diff = current.getDate() - day + (day === 0 ? -6 : 1);
-        const start = new Date(current); start.setDate(diff); 
-        const end = new Date(start); end.setDate(start.getDate() + 6);
-        return start.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) + " - " + end.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
-    } else if (reportType === 'daily') return reportDate.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
-    return '';
-  };
 
   const renderReportView = () => (
     <div className="animate-in fade-in duration-300">
@@ -1698,6 +1583,298 @@ export default function App() {
     </div>
   );
 
+  const renderInvestmentsView = () => {
+      const totalModal = portfolios.reduce((acc, p) => acc + (parseFloat(p.totalInvested) || 0), 0);
+      const totalVal = portfolios.reduce((acc, p) => acc + (parseFloat(p.currentValue) || 0), 0);
+      const totalFloating = totalVal - totalModal;
+      const isProfit = totalFloating >= 0;
+
+      return (
+        <div className="animate-in fade-in duration-300">
+            {/* Header Dashboard Investasi */}
+            <div className="bg-gradient-to-br from-purple-700 via-purple-600 to-indigo-800 rounded-3xl shadow-xl p-6 mb-6 text-white relative overflow-hidden">
+                <div className="absolute -right-4 -top-4 p-4 opacity-10 pointer-events-none">
+                    <LineChart className="w-40 h-40" />
+                </div>
+                <h2 className="text-sm font-bold text-purple-200 mb-2 relative z-10 flex items-center gap-2"><Briefcase className="w-4 h-4"/> Total Aset Investasi</h2>
+                <h3 className="text-3xl font-bold tracking-tight mb-6 relative z-10">
+                    {hideBalance ? '••••••••' : formatCurrency(totalVal, defaultCurrency)}
+                </h3>
+
+                <div className="grid grid-cols-2 gap-4 relative z-10 border-t border-white/20 pt-4">
+                    <div>
+                        <p className="text-[10px] text-purple-200 mb-1">Total Modal</p>
+                        <p className="font-bold text-sm">{hideBalance ? '••••' : formatCurrency(totalModal, defaultCurrency)}</p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] text-purple-200 mb-1">Keuntungan (Floating)</p>
+                        <p className={"font-bold text-sm flex items-center gap-1 " + (isProfit ? "text-emerald-300" : "text-rose-300")}>
+                            {isProfit ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                            {hideBalance ? '••••' : (isProfit ? "+" : "") + formatCurrency(totalFloating, defaultCurrency)}
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex justify-between items-center mb-4 px-1">
+                <h3 className="font-bold text-gray-800 text-sm">Daftar Portofolio</h3>
+                <button onClick={() => setShowPortfolioModal(true)} className="text-[10px] font-bold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-full hover:bg-purple-100 transition-colors flex items-center gap-1"><Plus className="w-3 h-3"/> Tambah Baru</button>
+            </div>
+
+            {/* List Portfolio */}
+            {portfolios.length === 0 ? (
+                <div className="text-center py-10 bg-white rounded-2xl border border-dashed border-gray-200 shadow-sm">
+                    <div className="bg-purple-50 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3"><LineChart className="w-6 h-6 text-purple-400" /></div>
+                    <p className="text-gray-800 font-bold text-sm mb-1">Belum ada investasi</p>
+                    <p className="text-gray-500 text-xs px-8">Catat aset seperti Saham, Reksa Dana, atau Kripto di sini.</p>
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    {portfolios.map(p => {
+                        const m = parseFloat(p.totalInvested) || 0;
+                        const v = parseFloat(p.currentValue) || 0;
+                        const diff = v - m;
+                        const isCuan = diff >= 0;
+                        const perc = m > 0 ? (diff / m * 100).toFixed(2) : 0;
+
+                        return (
+                        <div key={p.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 relative overflow-hidden">
+                            <div className="flex justify-between items-start mb-4">
+                                <div>
+                                    <h4 className="font-bold text-gray-800 flex items-center gap-2"><Briefcase className="w-4 h-4 text-purple-500"/> {p.name}</h4>
+                                    <p className="text-[10px] text-gray-400 mt-1">Modal: {formatCurrency(m, p.currency || defaultCurrency)}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="font-bold text-lg text-gray-900">{formatCurrency(v, p.currency || defaultCurrency)}</p>
+                                    <p className={"text-[10px] font-bold mt-0.5 inline-block px-1.5 py-0.5 rounded " + (isCuan ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600")}>
+                                        {isCuan ? "+" : ""}{formatCurrency(diff, p.currency || defaultCurrency)} ({isCuan ? "+" : ""}{perc}%)
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            {/* Action Buttons */}
+                            <div className="grid grid-cols-3 gap-2 pt-4 border-t border-gray-50">
+                                <button onClick={() => {setActivePortfolio(p); setInvestActionType('topup'); setShowInvestActionModal(true);}} className="py-2 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-xl text-xs font-bold transition-colors flex flex-col items-center justify-center gap-1"><ArrowUpCircle className="w-4 h-4"/> Top Up</button>
+                                <button onClick={() => {setActivePortfolio(p); setInvestActionType('withdraw'); setShowInvestActionModal(true);}} className="py-2 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-xl text-xs font-bold transition-colors flex flex-col items-center justify-center gap-1"><ArrowDownCircle className="w-4 h-4"/> Tarik</button>
+                                <button onClick={() => {setActivePortfolio(p); setInvestActionType('update'); setShowInvestActionModal(true);}} className="py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl text-xs font-bold transition-colors flex flex-col items-center justify-center gap-1"><RefreshCw className="w-4 h-4"/> Update Harga</button>
+                            </div>
+                        </div>
+                    )})}
+                </div>
+            )}
+        </div>
+      );
+  };
+
+  const downloadCSV = () => {
+    if (transactions.length === 0) { setNotification({ type: 'error', message: 'Tidak ada data.' }); return; }
+    
+    const headers = "id,iso_date,tanggal_display,deskripsi,kategori,tipe,mata_uang,jumlah,dompet_asal,dompet_tujuan,biaya_admin,rincian_item,url_struk,debtType,personName,dueDate,status,paidAmount,isSettlement,settledDebtId";
+    const csvRows = [headers];
+    
+    transactions.forEach(t => {
+      const dateObj = new Date(t.transactionDate || t.createdAt);
+      const isoDate = dateObj.toISOString().split('T')[0];
+      const catString = t.categories ? t.categories.join(' & ') : (t.category || 'Umum');
+      const cleanDesc = (t.description||'').split('"').join('""');
+      
+      let itemsString = "";
+      if (t.items && t.items.length > 0) {
+          itemsString = t.items.map(i => {
+              const cleanName = (i.name || '').split('"').join('""');
+              return cleanName + "::" + (i.price || 0) + "::" + (i.category || '');
+          }).join("||");
+      }
+      
+      const row = [
+          t.id || '', isoDate, `"${t.date || ''}"`, `"${cleanDesc}"`, `"${catString}"`,
+          t.type || '', (t.currency || 'IDR'), t.amount || 0, (t.walletId || ''), (t.toWalletId || ''),
+          (t.adminFee || 0), `"${itemsString}"`, `"${(t.receiptUrl || '')}"`,
+          (t.debtType || ''), `"${(t.personName || '')}"`, (t.dueDate || ''), (t.status || ''),
+          (t.paidAmount || 0), (t.isSettlement || false), (t.settledDebtId || '')
+      ].join(",");
+      csvRows.push(row);
+    });
+    
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'Backup_Dompetku_Final.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportClick = () => fileInputRef.current?.click();
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const rows = event.target.result.split('\n');
+        let importedCount = 0;
+        setLoading(true); setSyncStatus('saving');
+        
+        for (let i = 1; i < rows.length; i++) {
+          const rowText = rows[i].trim();
+          if (!rowText) continue;
+          
+          const cols = []; let cur = ''; let inQuote = false;
+          for (let j = 0; j < rowText.length; j++) {
+              const char = rowText[j];
+              if (char === '"' && rowText[j+1] === '"') { cur += '""'; j++; } 
+              else if (char === '"') { inQuote = !inQuote; } 
+              else if (char === ',' && !inQuote) { cols.push(cur); cur = ''; } 
+              else { cur += char; }
+          }
+          cols.push(cur);
+
+          if (cols && cols.length >= 6) {
+            const clean = (str) => {
+                if(!str) return '';
+                let s = str.trim();
+                if(s.startsWith('"') && s.endsWith('"')) s = s.substring(1, s.length - 1);
+                return s.split('""').join('"');
+            };
+            
+            const hasIdCol = cols[0].length > 15; 
+            const offset = hasIdCol ? 1 : 0; 
+
+            const isoDate = clean(cols[offset]);
+            const description = clean(cols[offset+2]);
+            const categoryRaw = clean(cols[offset+3]);
+            const typeRaw = clean(cols[offset+4]);
+            const type = typeRaw.includes('income') ? 'income' : (typeRaw.includes('transfer') ? 'transfer' : (typeRaw.includes('debt') ? 'debt' : 'expense'));
+            const catsArray = categoryRaw.split(' & ').map(c => c.trim()).filter(Boolean);
+
+            let curr = 'IDR'; let amt = 0; 
+            let wId = wallets[0]?.id || ''; let toWId = ''; let aFee = 0; let parsedItems = []; let recUrl = null;
+            let debtT = '', pName = '', dDate = '', st = '', pAmt = 0, isSet = false, setDId = '';
+
+            if (cols.length >= offset + 6) {
+                curr = clean(cols[offset+5]); amt = parseFloat(clean(cols[offset+6]));
+                wId = clean(cols[offset+7]) || wId;
+                toWId = clean(cols[offset+8]);
+                aFee = parseFloat(clean(cols[offset+9]) || 0);
+                const itemsRaw = clean(cols[offset+10]);
+                if (itemsRaw) parsedItems = itemsRaw.split('||').map(itemStr => { 
+                    const parts = itemStr.split('::'); 
+                    return { name: parts[0] || 'Item', price: parseFloat(parts[1]) || 0, category: parts[2] || '' }; 
+                });
+                recUrl = clean(cols[offset+11]);
+                
+                debtT = clean(cols[offset+12]);
+                pName = clean(cols[offset+13]);
+                dDate = clean(cols[offset+14]);
+                st = clean(cols[offset+15]);
+                pAmt = parseFloat(clean(cols[offset+16]) || 0);
+                isSet = clean(cols[offset+17]) === 'true';
+                setDId = clean(cols[offset+18]);
+            }
+            
+            if (isoDate && description && !isNaN(amt)) {
+              const dateObj = new Date(isoDate);
+              await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), {
+                description, amount: amt, type,
+                categories: catsArray.length > 0 ? catsArray : ['Umum'],
+                category: catsArray[0] || 'Umum',
+                currency: curr, walletId: wId, toWalletId: toWId, adminFee: aFee, items: parsedItems,
+                receiptUrl: recUrl,
+                debtType: debtT, personName: pName, dueDate: dDate, status: st, paidAmount: pAmt,
+                isSettlement: isSet, settledDebtId: setDId,
+                date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+                transactionDate: dateObj.getTime(), createdAt: Date.now()
+              });
+              importedCount++;
+            }
+          }
+        }
+        setLoading(false); setNotification({ type: 'success', message: 'Berhasil mengimpor ' + importedCount + ' transaksi.' });
+        e.target.value = null;
+      } catch (error) {
+        console.error(error);
+        setLoading(false); setNotification({ type: 'error', message: 'Gagal import file CSV.' });
+      } finally { setSyncStatus('synced'); }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleResetData = async () => {
+    if (!user) return;
+    setLoading(true); setSyncStatus('saving'); setShowResetModal(false);
+    try {
+      const batch = writeBatch(db);
+      const transSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'));
+      transSnapshot.forEach((doc) => batch.delete(doc.ref));
+      const catSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'categories'));
+      catSnapshot.forEach((doc) => batch.delete(doc.ref));
+      const walSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'wallets'));
+      walSnapshot.forEach((doc) => batch.delete(doc.ref));
+      
+      await batch.commit();
+      setTransactions([]); setCustomCategories([]); setWallets([]);
+      setNotification({ type: 'success', message: 'Semua Data direset bersih.' });
+    } catch (error) {
+      setNotification({ type: 'error', message: 'Gagal mereset.' });
+    } finally { setLoading(false); setSyncStatus('synced'); }
+  };
+
+  const confirmGenerateDummy = async () => {
+    if (!user) return;
+    setShowDummyModal(false); setLoading(true); setSyncStatus('saving');
+    try {
+      const w1 = wallets[0]?.id || '';
+      const w2 = wallets.length > 1 ? wallets[1].id : w1;
+      
+      const isIDR = defaultCurrency === 'IDR';
+      const multiplier = isIDR ? 100 : 1; 
+      const baseSalary = isIDR ? 5000000 : 250000;
+      const curr = defaultCurrency;
+
+      const dummyData = [
+        { desc: 'Gaji Bulanan', amount: baseSalary, type: 'income', cats: ['Gaji'], dayOffset: 6, curr: curr, walletId: w1, items: [] },
+        { desc: 'Belanja Supermarket (TRIAL)', amount: 4500 * multiplier, type: 'expense', cats: ['Belanja', 'Makanan'], dayOffset: 3, curr: curr, walletId: w2, items: [
+            { name: 'Beras 5kg', price: 2000 * multiplier, category: 'Makanan' },
+            { name: 'Telur Ayam 1 Pack', price: 300 * multiplier, category: 'Makanan' },
+            { name: 'Susu Murni 1L', price: 200 * multiplier, category: 'Makanan' },
+            { name: 'Daging Ayam', price: 1000 * multiplier, category: 'Makanan' },
+            { name: 'Sabun & Odol', price: 1000 * multiplier, category: 'Belanja' }
+        ]},
+        { desc: 'Makan Siang (Matsuya/Warteg)', amount: 600 * multiplier, type: 'expense', cats: ['Makanan'], dayOffset: 1, curr: curr, walletId: w2, items: [] },
+        { desc: 'Top-up Kartu Transport', amount: 2000 * multiplier, type: 'expense', cats: ['Transportasi'], dayOffset: 2, curr: curr, walletId: w1, items: [] }
+      ];
+
+      const now = new Date();
+      for (const item of dummyData) {
+        const dateObj = new Date(now); dateObj.setDate(dateObj.getDate() - item.dayOffset);
+        
+        const tData = {
+          description: item.desc, amount: item.amount, type: item.type, 
+          categories: item.cats, category: item.cats[0] || 'Umum', currency: item.currency || item.curr,
+          walletId: item.walletId,
+          items: item.items,
+          date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+          transactionDate: dateObj.getTime(), createdAt: Date.now()
+        };
+
+        if (item.type === 'transfer') {
+            tData.toWalletId = item.toWalletId;
+            tData.adminFee = item.adminFee;
+            tData.receivedAmount = item.receivedAmount;
+            tData.targetCurrency = item.targetCurrency;
+        }
+
+        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), tData);
+      }
+      setNotification({ type: 'success', message: 'Data demo realistis ditambahkan.' });
+    } catch (error) {
+      setNotification({ type: 'error', message: 'Gagal membuat demo.' });
+    } finally { setLoading(false); setSyncStatus('synced'); }
+  };
+
   const renderSettingsView = () => (
     <div className="animate-in fade-in duration-300">
       <h2 className="text-2xl font-bold text-gray-900 mb-6">Pengaturan</h2>
@@ -1815,26 +1992,29 @@ export default function App() {
         </div>
       </div>
 
-      {/* MANAJEMEN DATA & BACKUP (DIKEMBALIKAN) */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
-        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2"><Cloud className="w-4 h-4 text-gray-400" /> Manajemen Data</h3>
-        
-        <div className="grid grid-cols-2 gap-3 mb-4">
-            <button onClick={downloadCSV} className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 rounded-xl transition-all group">
-                <Download className="w-6 h-6 text-gray-400 group-hover:text-blue-600 mb-2" />
-                <span className="text-[10px] font-bold text-gray-600 group-hover:text-blue-700">Export CSV</span>
-            </button>
-            
-            <button onClick={handleImportClick} className="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-emerald-50 border border-gray-200 hover:border-emerald-200 rounded-xl transition-all group relative">
-                <Upload className="w-6 h-6 text-gray-400 group-hover:text-emerald-600 mb-2" />
-                <span className="text-[10px] font-bold text-gray-600 group-hover:text-emerald-700">Restore CSV</span>
-            </button>
-            <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Manajemen Data</h3>
+        <div className="space-y-3">
+          <button onClick={downloadCSV} disabled={transactions.length === 0} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 transition-all group">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-100 p-2 rounded-lg group-hover:bg-blue-200 transition-colors"><Download className="w-5 h-5 text-blue-600" /></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Export ke Excel</p><p className="text-xs text-gray-400">Unduh file backup</p></div>
+            </div>
+          </button>
+          <button onClick={handleImportClick} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-200 hover:border-emerald-200 transition-all group">
+             <div className="flex items-center gap-3">
+              <div className="bg-emerald-100 p-2 rounded-lg group-hover:bg-emerald-200 transition-colors"><Upload className="w-5 h-5 text-emerald-600" /></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Restore Data</p><p className="text-xs text-gray-400">Kembalikan data dari backup</p></div>
+            </div>
+          </button>
+          <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv" className="hidden" />
+          <button onClick={() => setShowDummyModal(true)} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-purple-50 border border-gray-200 hover:border-purple-200 transition-all group">
+             <div className="flex items-center gap-3">
+              <div className="bg-purple-100 p-2 rounded-lg group-hover:bg-purple-200 transition-colors"><Sparkles className="w-5 h-5 text-purple-600" /></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Isi Data Demo</p><p className="text-xs text-gray-400">Buat transaksi contoh otomatis</p></div>
+            </div>
+          </button>
         </div>
-        
-        <button onClick={() => setShowDummyModal(true)} className="w-full py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-600 font-bold rounded-xl border border-purple-200 transition-colors text-xs flex items-center justify-center gap-2">
-            <Sparkles className="w-4 h-4" /> Isi Data Demo (Testing)
-        </button>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-red-100 p-5 mb-6">
@@ -1842,7 +2022,7 @@ export default function App() {
         <button onClick={() => setShowResetModal(true)} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" /> Reset Semua Data & Dompet</button>
       </div>
       
-      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v6.0 (Perfect Final)</div>
+      <div className="text-center text-[10px] text-gray-300 pb-8">Dompetku Cloud v6.0 (Wealth Management)</div>
     </div>
   );
 
@@ -1944,8 +2124,8 @@ export default function App() {
                         </p>
                     </div>
 
-                    <div className="mb-4">
-                        <label className="block text-xs font-bold text-gray-600 mb-2">Jumlah yang dibayar:</label>
+                    <div className="mb-6">
+                        <label className="block text-xs font-bold text-gray-600 mb-2">Jumlah yang dibayar hari ini:</label>
                         <div className="relative">
                             <span className="absolute left-4 top-3 font-bold text-gray-400">{selectedDebt.currency}</span>
                             <input 
@@ -1958,7 +2138,6 @@ export default function App() {
                         </div>
                     </div>
 
-                    {/* INPUT DOMPET DAN TANGGAL UNTUK CICILAN */}
                     <div className="grid grid-cols-2 gap-3 mb-6">
                         <div>
                             <label className="block text-[10px] font-bold text-gray-500 mb-1">MASUK/KELUAR KE DOMPET</label>
@@ -2115,6 +2294,109 @@ export default function App() {
           </div>
         )}
 
+        {/* MODAL BUAT PORTOFOLIO BARU */}
+        {showPortfolioModal && (
+          <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-lg text-gray-800">Buat Portofolio</h3>
+                <button onClick={() => setShowPortfolioModal(false)}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
+              </div>
+              <form onSubmit={handleSavePortfolio} className="space-y-4">
+                  <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-1">Nama Portofolio (Aset)</label>
+                      <input type="text" autoFocus value={newPortfolioName} onChange={e=>setNewPortfolioName(e.target.value)} placeholder="Misal: Saham BBCA, Kripto..." className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500" required />
+                  </div>
+                  <button type="submit" disabled={!newPortfolioName.trim()} className="w-full mt-2 bg-purple-600 text-white font-bold py-3 rounded-xl hover:bg-purple-700 disabled:opacity-50">Simpan Portofolio</button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL AKSI INVESTASI (TOP UP / TARIK / UPDATE HARGA) */}
+        {showInvestActionModal && activePortfolio && (
+            <div className="fixed inset-0 bg-black/60 z-[100] flex flex-col justify-end md:items-center md:justify-center animate-in slide-in-from-bottom-full md:slide-in-from-bottom-0 duration-300">
+                <div className="bg-white rounded-t-3xl md:rounded-2xl p-6 w-full md:max-w-md shadow-2xl">
+                    <div className="flex justify-between items-center mb-6">
+                        <div>
+                            <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">
+                                {investActionType === 'topup' && <><ArrowUpCircle className="w-5 h-5 text-purple-600"/> Top Up Modal</>}
+                                {investActionType === 'withdraw' && <><ArrowDownCircle className="w-5 h-5 text-gray-600"/> Tarik Dana</>}
+                                {investActionType === 'update' && <><RefreshCw className="w-5 h-5 text-blue-600"/> Update Harga Pasar</>}
+                            </h3>
+                            <p className="text-xs text-gray-500">Portofolio: <b>{activePortfolio.name}</b></p>
+                        </div>
+                        <button onClick={() => setShowInvestActionModal(false)} className="p-2 bg-gray-100 rounded-full text-gray-500"><X className="w-5 h-5" /></button>
+                    </div>
+
+                    <div className="space-y-4 mb-6">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 mb-2">
+                                {investActionType === 'update' ? 'Nilai Saat Ini (Mark-to-Market):' : 'Nominal Transaksi:'}
+                            </label>
+                            <div className="relative">
+                                <span className="absolute left-4 top-3 font-bold text-gray-400">{activePortfolio.currency || defaultCurrency}</span>
+                                <input 
+                                    autoFocus
+                                    type="number" 
+                                    value={investAmount}
+                                    onChange={(e) => setInvestAmount(e.target.value)}
+                                    placeholder="0"
+                                    className={"w-full border rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:ring-2 font-bold text-lg transition-all " + 
+                                        (investActionType === 'topup' ? "bg-purple-50 border-purple-200 focus:border-purple-500 focus:ring-purple-200 text-purple-900" :
+                                         investActionType === 'withdraw' ? "bg-gray-50 border-gray-200 focus:border-gray-500 focus:ring-gray-200 text-gray-900" :
+                                         "bg-blue-50 border-blue-200 focus:border-blue-500 focus:ring-blue-200 text-blue-900")
+                                    }
+                                />
+                            </div>
+                        </div>
+
+                        {investActionType !== 'update' && (
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 mb-1">
+                                        {investActionType === 'topup' ? 'SUMBER DANA' : 'CAIRKAN KE DOMPET'}
+                                    </label>
+                                    <div className="relative">
+                                        <select 
+                                            value={walletId} 
+                                            onChange={(e) => setWalletId(e.target.value)} 
+                                            className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-purple-500 appearance-none text-xs font-bold"
+                                        >
+                                            <option value="" disabled>Pilih Dompet</option>
+                                            {wallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                                        </select>
+                                        <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 mb-1">TANGGAL TRANSAKSI</label>
+                                    <input 
+                                        type="date" 
+                                        value={date} 
+                                        onChange={(e) => setDate(e.target.value)} 
+                                        className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-purple-500 text-xs font-medium" 
+                                    />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <button 
+                        onClick={processInvestAction} 
+                        disabled={!investAmount || parseFloat(investAmount) < 0 || (investActionType !== 'update' && !walletId)} 
+                        className={"w-full py-3.5 text-white font-bold rounded-xl shadow-lg disabled:opacity-50 transition-colors " + 
+                            (investActionType === 'topup' ? "bg-purple-600 hover:bg-purple-700" :
+                             investActionType === 'withdraw' ? "bg-gray-800 hover:bg-gray-900" :
+                             "bg-blue-600 hover:bg-blue-700")
+                        }
+                    >
+                        {investActionType === 'update' ? 'Simpan Nilai Baru' : 'Proses Transaksi'}
+                    </button>
+                </div>
+            </div>
+        )}
+
         {showItemCatModal && (
           <div className="fixed inset-0 bg-black/40 z-[80] flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl max-h-[80vh] overflow-y-auto">
@@ -2218,6 +2500,7 @@ export default function App() {
         <div className="px-4 md:px-0">
           {view === 'home' && renderHomeView()}
           {view === 'report' && <div className="mt-4">{renderReportView()}</div>}
+          {view === 'investments' && <div className="mt-4">{renderInvestmentsView()}</div>}
           {view === 'settings' && <div className="mt-4">{renderSettingsView()}</div>}
         </div>
         
@@ -2227,14 +2510,16 @@ export default function App() {
           </button>
         )}
 
+        {/* 4 MENU BOTTOM NAVIGATION BAR BARU */}
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-2 z-30 md:max-w-md md:mx-auto md:bottom-4 md:rounded-2xl md:border md:shadow-xl">
           <div className="flex justify-around items-center">
             <button onClick={() => setView('home')} className={"flex flex-col items-center p-2 rounded-xl flex-1 transition-all " + (view === 'home' ? "text-blue-600 bg-blue-50" : "text-gray-400 hover:text-gray-600")}><List className="w-6 h-6 mb-1" /><span className="text-[10px] font-bold mt-1">Beranda</span></button>
-            <button onClick={() => setView('report')} className={"flex flex-col items-center p-2 rounded-xl flex-1 transition-all " + (view === 'report' ? "text-blue-600 bg-blue-50" : "text-gray-400 hover:text-gray-600")}><FileText className="w-6 h-6 mb-1" /><span className="text-[10px] font-bold mt-1">Laporan</span></button>
+            <button onClick={() => setView('report')} className={"flex flex-col items-center p-2 rounded-xl flex-1 transition-all " + (view === 'report' ? "text-blue-600 bg-blue-50" : "text-gray-400 hover:text-gray-600")}><PieChart className="w-6 h-6 mb-1" /><span className="text-[10px] font-bold mt-1">Laporan</span></button>
+            <button onClick={() => setView('investments')} className={"flex flex-col items-center p-2 rounded-xl flex-1 transition-all " + (view === 'investments' ? "text-purple-600 bg-purple-50" : "text-gray-400 hover:text-gray-600")}><LineChart className="w-6 h-6 mb-1" /><span className="text-[10px] font-bold mt-1">Investasi</span></button>
             <button onClick={() => setView('settings')} className={"flex flex-col items-center p-2 rounded-xl flex-1 transition-all " + (view === 'settings' ? "text-blue-600 bg-blue-50" : "text-gray-400 hover:text-gray-600")}><Settings className="w-6 h-6 mb-1" /><span className="text-[10px] font-bold mt-1">Menu</span></button>
           </div>
         </div>
       </div>
     </div>
   );
-                }
+}
