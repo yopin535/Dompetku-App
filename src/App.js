@@ -79,7 +79,7 @@ export default function App() {
   const [activeItemIndex, setActiveItemIndex] = useState(null);
   const [newCatName, setNewCatName] = useState('');
 
-  // Modals & Fitur Baru (Search & Filter)
+  // Modals & Fitur Search & Filter
   const [previewImage, setPreviewImage] = useState(null);
   const [showDebtModal, setShowDebtModal] = useState(false);
   const [activeDebtTab, setActiveDebtTab] = useState('lend'); 
@@ -162,12 +162,12 @@ export default function App() {
   const defaultIncomeCategories = ['Gaji', 'Bonus', 'Hadiah', 'Penjualan', 'Investasi', 'Freelance', 'Lainnya'];
 
   const expenseCategories = useMemo(() => {
-    const custom = customCategories.filter(c => c.type === 'expense').map(c => c.name);
+    const custom = customCategories.filter(c => c && c.type === 'expense').map(c => c.name);
     return [...defaultExpenseCategories, ...custom];
   }, [customCategories]);
 
   const incomeCategories = useMemo(() => {
-    const custom = customCategories.filter(c => c.type === 'income').map(c => c.name);
+    const custom = customCategories.filter(c => c && c.type === 'income').map(c => c.name);
     return [...defaultIncomeCategories, ...custom];
   }, [customCategories]);
 
@@ -225,8 +225,8 @@ export default function App() {
     const unsubTrans = onSnapshot(transRef, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       data.sort((a, b) => {
-        const dateA = a.transactionDate || a.createdAt;
-        const dateB = b.transactionDate || b.createdAt;
+        const dateA = a.transactionDate || a.createdAt || 0;
+        const dateB = b.transactionDate || b.createdAt || 0;
         return dateB - dateA; 
       });
       setTransactions(data);
@@ -287,26 +287,27 @@ export default function App() {
     wallets.forEach(w => balances[w.id] = parseFloat(w.initialBalance || 0));
     
     transactions.forEach(t => {
-       if (t.type === 'income') {
+       const tType = t.type || '';
+       if (tType === 'income') {
            if(balances[t.walletId] !== undefined) balances[t.walletId] += parseFloat(t.amount || 0);
-       } else if (t.type === 'expense') {
+       } else if (tType === 'expense') {
            if(balances[t.walletId] !== undefined) balances[t.walletId] -= parseFloat(t.amount || 0);
-       } else if (t.type === 'transfer') {
+       } else if (tType === 'transfer') {
            if(balances[t.walletId] !== undefined) {
                balances[t.walletId] -= (parseFloat(t.amount || 0) + parseFloat(t.adminFee || 0));
            }
            if(balances[t.toWalletId] !== undefined) {
                balances[t.toWalletId] += parseFloat(t.receivedAmount || t.amount || 0);
            }
-       } else if (t.type === 'debt') {
+       } else if (tType === 'debt') {
            if (t.debtType === 'lend') { 
                if(balances[t.walletId] !== undefined) balances[t.walletId] -= parseFloat(t.amount || 0);
            } else if (t.debtType === 'borrow') { 
                if(balances[t.walletId] !== undefined) balances[t.walletId] += parseFloat(t.amount || 0);
            }
-       } else if (t.type === 'invest_deposit') {
+       } else if (tType === 'invest_deposit') {
            if(balances[t.walletId] !== undefined) balances[t.walletId] -= parseFloat(t.amount || 0);
-       } else if (t.type === 'invest_withdraw') {
+       } else if (tType === 'invest_withdraw') {
            if(balances[t.walletId] !== undefined) balances[t.walletId] += parseFloat(t.amount || 0);
        }
     });
@@ -343,18 +344,18 @@ export default function App() {
   }, [totalCashByCurrency, totalInvestmentsByCurrency]);
 
   const activeDebts = useMemo(() => {
-      return transactions.filter(t => t.type === 'debt' && t.status === 'unpaid').sort((a,b) => (b.transactionDate || b.createdAt || 0) - (a.transactionDate || a.createdAt || 0));
+      return transactions.filter(t => t && t.type === 'debt' && t.status === 'unpaid').sort((a,b) => (b.transactionDate || b.createdAt || 0) - (a.transactionDate || a.createdAt || 0));
   }, [transactions]);
 
   const settledDebts = useMemo(() => {
-      return transactions.filter(t => t.type === 'debt' && t.status === 'paid').sort((a,b) => (b.paidAt || 0) - (a.paidAt || 0));
+      return transactions.filter(t => t && t.type === 'debt' && t.status === 'paid').sort((a,b) => (b.paidAt || 0) - (a.paidAt || 0));
   }, [transactions]);
 
   const debtSummary = useMemo(() => {
       let totalLend = 0;
       let totalBorrow = 0;
       activeDebts.forEach(d => {
-          const remaining = parseFloat(d.amount) - (parseFloat(d.paidAmount) || 0);
+          const remaining = parseFloat(d.amount || 0) - (parseFloat(d.paidAmount) || 0);
           if (d.debtType === 'lend') totalLend += remaining;
           if (d.debtType === 'borrow') totalBorrow += remaining;
       });
@@ -414,6 +415,262 @@ export default function App() {
           await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'wallets', id));
           setNotification({ type: 'success', message: 'Dompet dihapus.' });
       } catch (error) { setSyncStatus('offline'); }
+  };
+
+  const downloadCSV = () => {
+    if (transactions.length === 0) { 
+      setNotification({ type: 'error', message: 'Tidak ada data untuk diekspor.' }); 
+      return; 
+    }
+    
+    const headers = "id,iso_date,tanggal_display,deskripsi,kategori,tipe,mata_uang,jumlah,dompet_asal,dompet_tujuan,biaya_admin,rincian_item,url_struk,debtType,personName,dueDate,status,paidAmount,isSettlement,settledDebtId";
+    const csvRows = [headers];
+    
+    transactions.forEach(t => {
+      const dateObj = new Date(t.transactionDate || t.createdAt || Date.now());
+      const isoDate = dateObj.toISOString().split('T')[0];
+      const catString = t.categories ? t.categories.join(' & ') : (t.category || 'Umum');
+      const cleanDesc = (t.description || '').split('"').join('""');
+      
+      let itemsString = "";
+      if (t.items && Array.isArray(t.items) && t.items.length > 0) {
+          itemsString = t.items.map(i => {
+              const cleanName = (i.name || '').split('"').join('""');
+              return cleanName + "::" + (i.price || 0) + "::" + (i.category || '');
+          }).join("||");
+      }
+      
+      const row = [
+          t.id || '',
+          isoDate,
+          `"${t.date || ''}"`,
+          `"${cleanDesc}"`,
+          `"${catString}"`,
+          t.type || '',
+          (t.currency || 'IDR'),
+          t.amount || 0,
+          (t.walletId || ''),
+          (t.toWalletId || ''),
+          (t.adminFee || 0),
+          `"${itemsString}"`,
+          `"${(t.receiptUrl || '')}"`,
+          (t.debtType || ''),
+          `"${(t.personName || '')}"`,
+          (t.dueDate || ''),
+          (t.status || ''),
+          (t.paidAmount || 0),
+          (t.isSettlement || false),
+          (t.settledDebtId || '')
+      ].join(",");
+      csvRows.push(row);
+    });
+    
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Backup_Dompetku_${getCurrentDate()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportClick = () => fileInputRef.current?.click();
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const rows = event.target.result.split('\n');
+        let importedCount = 0;
+        setLoading(true); 
+        setSyncStatus('saving');
+        
+        for (let i = 1; i < rows.length; i++) {
+          const rowText = rows[i].trim();
+          if (!rowText) continue;
+          
+          const cols = []; 
+          let cur = ''; 
+          let inQuote = false;
+          for (let j = 0; j < rowText.length; j++) {
+              const char = rowText[j];
+              if (char === '"' && rowText[j+1] === '"') { cur += '""'; j++; } 
+              else if (char === '"') { inQuote = !inQuote; } 
+              else if (char === ',' && !inQuote) { cols.push(cur); cur = ''; } 
+              else { cur += char; }
+          }
+          cols.push(cur);
+
+          if (cols && cols.length >= 6) {
+            const clean = (str) => {
+                if(!str) return '';
+                let s = str.trim();
+                if(s.startsWith('"') && s.endsWith('"')) s = s.substring(1, s.length - 1);
+                return s.split('""').join('"');
+            };
+            
+            const hasIdCol = cols[0].length > 15;
+            const offset = hasIdCol ? 1 : 0;
+
+            const isoDate = clean(cols[offset]);
+            const description = clean(cols[offset+2]);
+            const categoryRaw = clean(cols[offset+3]);
+            const typeRaw = clean(cols[offset+4]);
+            const type = typeRaw.includes('income') ? 'income' : (typeRaw.includes('transfer') ? 'transfer' : (typeRaw.includes('debt') ? 'debt' : (typeRaw.includes('invest') ? typeRaw : 'expense')));
+            const catsArray = categoryRaw.split(' & ').map(c => c.trim()).filter(Boolean);
+
+            let curr = 'IDR'; 
+            let amt = 0; 
+            let wId = wallets[0]?.id || ''; 
+            let toWId = ''; 
+            let aFee = 0; 
+            let parsedItems = []; 
+            let recUrl = null;
+            let debtT = '', pName = '', dDate = '', st = '', pAmt = 0, isSet = false, setDId = '';
+
+            if (cols.length >= offset + 6) {
+                curr = clean(cols[offset+5]); 
+                amt = parseFloat(clean(cols[offset+6]));
+                wId = clean(cols[offset+7]) || wId;
+                toWId = clean(cols[offset+8]);
+                aFee = parseFloat(clean(cols[offset+9]) || 0);
+                const itemsRaw = clean(cols[offset+10]);
+                if (itemsRaw) parsedItems = itemsRaw.split('||').map(itemStr => { 
+                    const parts = itemStr.split('::'); 
+                    return { name: parts[0] || 'Item', price: parseFloat(parts[1]) || 0, category: parts[2] || '' }; 
+                });
+                recUrl = clean(cols[offset+11]);
+                
+                debtT = clean(cols[offset+12]);
+                pName = clean(cols[offset+13]);
+                dDate = clean(cols[offset+14]);
+                st = clean(cols[offset+15]);
+                pAmt = parseFloat(clean(cols[offset+16]) || 0);
+                isSet = clean(cols[offset+17]) === 'true';
+                setDId = clean(cols[offset+18]);
+            }
+            
+            if (isoDate && description && !isNaN(amt)) {
+              const dateObj = new Date(isoDate);
+              await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), {
+                description, amount: amt, type,
+                categories: catsArray.length > 0 ? catsArray : ['Umum'],
+                category: catsArray[0] || 'Umum',
+                currency: curr, walletId: wId, toWalletId: toWId, adminFee: aFee, items: parsedItems,
+                receiptUrl: recUrl,
+                debtType: debtT, personName: pName, dueDate: dDate, status: st, paidAmount: pAmt,
+                isSettlement: isSet, settledDebtId: setDId,
+                date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+                transactionDate: dateObj.getTime(), createdAt: Date.now()
+              });
+              importedCount++;
+            }
+          }
+        }
+        setLoading(false); 
+        setNotification({ type: 'success', message: `Berhasil mengimpor ${importedCount} transaksi.` });
+        e.target.value = null;
+      } catch (error) {
+        console.error(error);
+        setLoading(false); 
+        setNotification({ type: 'error', message: 'Gagal membaca file CSV.' });
+      } finally { 
+        setSyncStatus('synced'); 
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleResetData = async () => {
+    if (!user) return;
+    setLoading(true); 
+    setSyncStatus('saving'); 
+    setShowResetModal(false);
+    try {
+      const batch = writeBatch(db);
+      const transSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'));
+      transSnapshot.forEach((docSnap) => batch.delete(docSnap.ref));
+      const catSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'categories'));
+      catSnapshot.forEach((docSnap) => batch.delete(docSnap.ref));
+      const walSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'wallets'));
+      walSnapshot.forEach((docSnap) => batch.delete(docSnap.ref));
+      const portSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'portfolios'));
+      portSnapshot.forEach((docSnap) => batch.delete(docSnap.ref));
+      
+      await batch.commit();
+      setTransactions([]); 
+      setCustomCategories([]); 
+      setWallets([]);
+      setPortfolios([]);
+      setNotification({ type: 'success', message: 'Semua data berhasil direset.' });
+    } catch (error) {
+      console.error(error);
+      setNotification({ type: 'error', message: 'Gagal mereset data.' });
+    } finally { 
+      setLoading(false); 
+      setSyncStatus('synced'); 
+    }
+  };
+
+  const confirmGenerateDummy = async () => {
+    if (!user) return;
+    setShowDummyModal(false); 
+    setLoading(true); 
+    setSyncStatus('saving');
+    try {
+      const w1 = wallets[0]?.id || '';
+      const w2 = wallets.length > 1 ? wallets[1].id : w1;
+      
+      const isIDR = defaultCurrency === 'IDR';
+      const multiplier = isIDR ? 100 : 1; 
+      const baseSalary = isIDR ? 5000000 : 250000;
+      const curr = defaultCurrency;
+
+      const dummyData = [
+        { desc: 'Gaji Bulanan', amount: baseSalary, type: 'income', cats: ['Gaji'], dayOffset: 6, curr: curr, walletId: w1, items: [] },
+        { desc: 'Belanja Supermarket', amount: 4500 * multiplier, type: 'expense', cats: ['Belanja', 'Makanan'], dayOffset: 3, curr: curr, walletId: w2, items: [
+            { name: 'Beras 5kg', price: 2000 * multiplier, category: 'Makanan' },
+            { name: 'Telur Ayam 1 Pack', price: 300 * multiplier, category: 'Makanan' },
+            { name: 'Susu Murni 1L', price: 200 * multiplier, category: 'Makanan' },
+            { name: 'Daging Ayam', price: 1000 * multiplier, category: 'Makanan' },
+            { name: 'Sabun & Odol', price: 1000 * multiplier, category: 'Belanja' }
+        ]},
+        { desc: 'Makan Siang Resto', amount: 600 * multiplier, type: 'expense', cats: ['Makanan'], dayOffset: 1, curr: curr, walletId: w2, items: [] },
+        { desc: 'Top-up Saldo Transport', amount: 2000 * multiplier, type: 'expense', cats: ['Transportasi'], dayOffset: 2, curr: curr, walletId: w1, items: [] }
+      ];
+
+      const now = new Date();
+      for (const item of dummyData) {
+        const dateObj = new Date(now); 
+        dateObj.setDate(dateObj.getDate() - item.dayOffset);
+        
+        const tData = {
+          description: item.desc, 
+          amount: item.amount, 
+          type: item.type, 
+          categories: item.cats, 
+          category: item.cats[0] || 'Umum', 
+          currency: item.curr,
+          walletId: item.walletId,
+          items: item.items,
+          date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+          transactionDate: dateObj.getTime(), 
+          createdAt: Date.now()
+        };
+
+        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), tData);
+      }
+      setNotification({ type: 'success', message: 'Data demo berhasil ditambahkan.' });
+    } catch (error) {
+      console.error(error);
+      setNotification({ type: 'error', message: 'Gagal membuat demo data.' });
+    } finally { 
+      setLoading(false); 
+      setSyncStatus('synced'); 
+    }
   };
 
   const compressImage = (file) => {
@@ -654,7 +911,8 @@ export default function App() {
 
       if (editId) {
         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', editId), transactionData);
-        setNotification({ type: 'success', message: 'Transaksi diperbarui.' }); setEditId(null);
+        setNotification({ type: 'success', message: 'Transaksi diperbarui.' }); 
+        setEditId(null);
       } else {
         transactionData.createdAt = Date.now();
         await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), transactionData);
@@ -739,7 +997,8 @@ export default function App() {
               currentValue: 0,
               createdAt: Date.now() 
           });
-          setNewPortfolioName(''); setShowPortfolioModal(false);
+          setNewPortfolioName(''); 
+          setShowPortfolioModal(false);
           setNotification({ type: 'success', message: 'Portofolio investasi dibuat.' });
       } catch (error) { setSyncStatus('offline'); }
   };
@@ -859,16 +1118,32 @@ export default function App() {
     });
   };
 
+  const changeReportPeriod = (increment) => {
+    setReportDate(prevDate => {
+        const newDate = new Date(prevDate.getFullYear(), prevDate.getMonth(), prevDate.getDate());
+        if (reportType === 'yearly') newDate.setFullYear(newDate.getFullYear() + increment);
+        else if (reportType === 'monthly') {
+            newDate.setMonth(newDate.getMonth() + increment);
+            newDate.setDate(1); 
+        }
+        else if (reportType === 'weekly') newDate.setDate(newDate.getDate() + (increment * 7));
+        else if (reportType === 'daily') newDate.setDate(newDate.getDate() + increment);
+        return newDate;
+    });
+  };
+
   const processedHomeTransactions = useMemo(() => {
     let result = transactions.filter(t => {
-        const d = new Date(t.transactionDate || t.createdAt);
+        if (!t) return false;
+        const d = new Date(t.transactionDate || t.createdAt || Date.now());
         const isCurrentMonth = d.getMonth() === homeViewDate.getMonth() && d.getFullYear() === homeViewDate.getFullYear();
 
         if (searchQuery) {
             const q = searchQuery.toLowerCase();
             const matchDesc = t.description ? t.description.toLowerCase().includes(q) : false;
-            const matchCat = (t.category && t.category.toLowerCase().includes(q)) || (t.categories && t.categories.some(c => c && typeof c === 'string' && c.toLowerCase().includes(q)));
-            const matchItem = t.items ? t.items.some(i => (i.name && i.name.toLowerCase().includes(q)) || (i.category && typeof i.category === 'string' && i.category.toLowerCase().includes(q))) : false;
+            const matchCat = (t.category && typeof t.category === 'string' && t.category.toLowerCase().includes(q)) || 
+                             (t.categories && Array.isArray(t.categories) && t.categories.some(c => c && typeof c === 'string' && c.toLowerCase().includes(q)));
+            const matchItem = t.items && Array.isArray(t.items) ? t.items.some(i => (i.name && typeof i.name === 'string' && i.name.toLowerCase().includes(q)) || (i.category && typeof i.category === 'string' && i.category.toLowerCase().includes(q))) : false;
             const matchPerson = t.personName ? t.personName.toLowerCase().includes(q) : false;
             if (!matchDesc && !matchCat && !matchItem && !matchPerson) return false;
         } else {
@@ -881,12 +1156,12 @@ export default function App() {
     });
 
     result.sort((a, b) => {
-        const dateA = a.transactionDate || a.createdAt;
-        const dateB = b.transactionDate || b.createdAt;
+        const dateA = a.transactionDate || a.createdAt || 0;
+        const dateB = b.transactionDate || b.createdAt || 0;
         if (sortBy === 'date_desc') return dateB - dateA;
         if (sortBy === 'date_asc') return dateA - dateB;
-        if (sortBy === 'amount_desc') return b.amount - a.amount;
-        if (sortBy === 'amount_asc') return a.amount - b.amount;
+        if (sortBy === 'amount_desc') return (b.amount || 0) - (a.amount || 0);
+        if (sortBy === 'amount_asc') return (a.amount || 0) - (b.amount || 0);
         return 0;
     });
 
@@ -1362,10 +1637,11 @@ export default function App() {
 
   const filteredByPeriod = useMemo(() => {
     return transactions.filter(t => {
+      if (!t) return false;
       const typeStr = t.type || '';
       if (typeStr === 'debt' || typeStr.includes('invest')) return false; 
       
-      const tDate = new Date(t.transactionDate || t.createdAt);
+      const tDate = new Date(t.transactionDate || t.createdAt || Date.now());
       
       if (reportType === 'daily') {
           return tDate.getDate() === reportDate.getDate() && tDate.getMonth() === reportDate.getMonth() && tDate.getFullYear() === reportDate.getFullYear();
@@ -1401,7 +1677,7 @@ export default function App() {
     
     reportTransactions.forEach(t => {
       if (t.type === 'expense') { 
-        if (t.items && t.items.length > 0) {
+        if (t.items && Array.isArray(t.items) && t.items.length > 0) {
             let itemsTotal = 0;
             t.items.forEach(item => {
                 const itemPrice = parseFloat(item.price) || 0;
@@ -1411,7 +1687,7 @@ export default function App() {
                 totalExpense += itemPrice;
                 itemsTotal += itemPrice;
             });
-            const diff = parseFloat(t.amount) - itemsTotal;
+            const diff = parseFloat(t.amount || 0) - itemsTotal;
             if (diff > 0) {
                 const primaryCat = (t.categories && t.categories.length > 0) ? t.categories[0] : (t.category || 'Umum');
                 stats[primaryCat] = (stats[primaryCat] || 0) + diff;
@@ -1419,8 +1695,8 @@ export default function App() {
             }
         } else {
             const primaryCat = (t.categories && t.categories.length > 0) ? t.categories[0] : (t.category || 'Umum');
-            stats[primaryCat] = (stats[primaryCat] || 0) + parseFloat(t.amount); 
-            totalExpense += parseFloat(t.amount); 
+            stats[primaryCat] = (stats[primaryCat] || 0) + parseFloat(t.amount || 0); 
+            totalExpense += parseFloat(t.amount || 0); 
         }
       } else if (t.type === 'transfer' && t.adminFee > 0) {
         stats['Biaya Admin'] = (stats['Biaya Admin'] || 0) + parseFloat(t.adminFee);
@@ -1434,9 +1710,9 @@ export default function App() {
   }, [reportTransactions]);
 
   const reportSummary = useMemo(() => {
-    const inc = reportTransactions.filter(t => t.type === 'income').reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
+    const inc = reportTransactions.filter(t => t.type === 'income').reduce((acc, curr) => acc + parseFloat(curr.amount || 0), 0);
     const exp = reportTransactions.reduce((acc, curr) => {
-        if(curr.type === 'expense') return acc + parseFloat(curr.amount);
+        if(curr.type === 'expense') return acc + parseFloat(curr.amount || 0);
         if(curr.type === 'transfer' && curr.adminFee > 0) return acc + parseFloat(curr.adminFee);
         return acc;
     }, 0);
@@ -1543,7 +1819,7 @@ export default function App() {
                   
                   const catTransactions = reportTransactions.filter(t => {
                       if(t.type !== 'expense') return false;
-                      if(t.items && t.items.length > 0) return t.items.some(item => (item.category || (t.categories && t.categories.length > 0 ? t.categories[0] : (t.category || 'Umum'))) === cat.name);
+                      if(t.items && Array.isArray(t.items) && t.items.length > 0) return t.items.some(item => (item.category || (t.categories && t.categories.length > 0 ? t.categories[0] : (t.category || 'Umum'))) === cat.name);
                       return ((t.categories && t.categories.length > 0 ? t.categories[0] : (t.category || 'Umum')) === cat.name);
                   });
 
@@ -1784,13 +2060,13 @@ export default function App() {
           <button onClick={downloadCSV} disabled={transactions.length === 0} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 transition-all group">
             <div className="flex items-center gap-3">
               <div className="bg-blue-100 p-2 rounded-lg group-hover:bg-blue-200 transition-colors"><Download className="w-5 h-5 text-blue-600" /></div>
-              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Export ke Excel</p><p className="text-xs text-gray-400">Unduh file backup</p></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Export ke Excel/CSV</p><p className="text-xs text-gray-400">Unduh file backup</p></div>
             </div>
           </button>
           <button onClick={handleImportClick} className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-200 hover:border-emerald-200 transition-all group">
              <div className="flex items-center gap-3">
               <div className="bg-emerald-100 p-2 rounded-lg group-hover:bg-emerald-200 transition-colors"><Upload className="w-5 h-5 text-emerald-600" /></div>
-              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Restore Data</p><p className="text-xs text-gray-400">Kembalikan data dari backup</p></div>
+              <div className="text-left"><p className="font-medium text-gray-800 text-sm">Restore Data</p><p className="text-xs text-gray-400">Kembalikan data dari file CSV</p></div>
             </div>
           </button>
           <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv" className="hidden" />
@@ -2273,7 +2549,7 @@ export default function App() {
                     {customCategories.filter(c => c.type === type).map((c) => (
                       <li key={c.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100 group hover:border-blue-200 transition-colors">
                         <span className="text-sm font-medium text-gray-700">{c.name}</span>
-                        <button onClick={() => handleDeleteCategory(c.id, c.name)} className="text-gray-400 hover:text-rose-500 p-1.5 hover:bg-rose-50 rounded-lg transition-all"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={() => handleDeleteCategory(c.id)} className="text-gray-400 hover:text-rose-500 p-1.5 hover:bg-rose-50 rounded-lg transition-all"><Trash2 className="w-4 h-4" /></button>
                       </li>
                     ))}
                   </ul>
