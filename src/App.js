@@ -122,7 +122,6 @@ export default function App() {
     { code: 'MYR', symbol: 'RM' },
   ];
 
-  // --- FORM STATES ---
   const [type, setType] = useState('expense'); 
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
@@ -306,10 +305,8 @@ export default function App() {
                if(balances[t.walletId] !== undefined) balances[t.walletId] += parseFloat(t.amount || 0);
            }
        } else if (t.type === 'invest_deposit') {
-           // Mengurangi saldo dompet
            if(balances[t.walletId] !== undefined) balances[t.walletId] -= parseFloat(t.amount || 0);
        } else if (t.type === 'invest_withdraw') {
-           // Menambah saldo dompet
            if(balances[t.walletId] !== undefined) balances[t.walletId] += parseFloat(t.amount || 0);
        }
     });
@@ -346,7 +343,7 @@ export default function App() {
   }, [totalCashByCurrency, totalInvestmentsByCurrency]);
 
   const activeDebts = useMemo(() => {
-      return transactions.filter(t => t.type === 'debt' && t.status === 'unpaid').sort((a,b) => b.createdAt - a.createdAt);
+      return transactions.filter(t => t.type === 'debt' && t.status === 'unpaid').sort((a,b) => (b.transactionDate || b.createdAt || 0) - (a.transactionDate || a.createdAt || 0));
   }, [transactions]);
 
   const settledDebts = useMemo(() => {
@@ -730,7 +727,6 @@ export default function App() {
       }
   };
 
-  // --- FUNGSI INVESTASI ---
   const handleSavePortfolio = async (e) => {
       e.preventDefault();
       if (!newPortfolioName || !user) return;
@@ -863,20 +859,6 @@ export default function App() {
     });
   };
 
-  const changeReportPeriod = (increment) => {
-    setReportDate(prevDate => {
-        const newDate = new Date(prevDate.getFullYear(), prevDate.getMonth(), prevDate.getDate());
-        if (reportType === 'yearly') newDate.setFullYear(newDate.getFullYear() + increment);
-        else if (reportType === 'monthly') {
-            newDate.setMonth(newDate.getMonth() + increment);
-            newDate.setDate(1); 
-        }
-        else if (reportType === 'weekly') newDate.setDate(newDate.getDate() + (increment * 7));
-        else if (reportType === 'daily') newDate.setDate(newDate.getDate() + increment);
-        return newDate;
-    });
-  };
-
   const processedHomeTransactions = useMemo(() => {
     let result = transactions.filter(t => {
         const d = new Date(t.transactionDate || t.createdAt);
@@ -885,8 +867,8 @@ export default function App() {
         if (searchQuery) {
             const q = searchQuery.toLowerCase();
             const matchDesc = t.description ? t.description.toLowerCase().includes(q) : false;
-            const matchCat = (t.category && t.category.toLowerCase().includes(q)) || (t.categories && t.categories.some(c => c.toLowerCase().includes(q)));
-            const matchItem = t.items ? t.items.some(i => (i.name && i.name.toLowerCase().includes(q)) || (i.category && i.category.toLowerCase().includes(q))) : false;
+            const matchCat = (t.category && t.category.toLowerCase().includes(q)) || (t.categories && t.categories.some(c => c && typeof c === 'string' && c.toLowerCase().includes(q)));
+            const matchItem = t.items ? t.items.some(i => (i.name && i.name.toLowerCase().includes(q)) || (i.category && typeof i.category === 'string' && i.category.toLowerCase().includes(q))) : false;
             const matchPerson = t.personName ? t.personName.toLowerCase().includes(q) : false;
             if (!matchDesc && !matchCat && !matchItem && !matchPerson) return false;
         } else {
@@ -1146,7 +1128,7 @@ export default function App() {
                    </div>
                    
                    <div>
-                       <label className="block text-[10px] font-bold text-gray-500 mb-1">NOMINAL {wAsal ? `(${wAsal.currency})` : ''}</label>
+                       <label className="block text-[10px] font-bold text-gray-500 mb-1">TOTAL NOMINAL {wAsal ? `(${wAsal.currency})` : ''}</label>
                        <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:border-orange-500 transition-all font-bold text-gray-800 text-lg" />
                    </div>
 
@@ -1273,9 +1255,10 @@ export default function App() {
                   <h4 className="text-sm font-bold text-gray-500 border-b border-gray-200 pb-2 mb-3 sticky top-[72px] bg-gray-50/95 backdrop-blur-sm z-10">{group.date}</h4>
                   <div className="space-y-3">
                     {group.items.map((t) => {
-                      const isTransfer = t.type === 'transfer';
-                      const isDebt = t.type === 'debt';
-                      const isInvest = t.type.includes('invest');
+                      const typeStr = t.type || '';
+                      const isTransfer = typeStr === 'transfer';
+                      const isDebt = typeStr === 'debt';
+                      const isInvest = typeof typeStr === 'string' && typeStr.includes('invest');
                       const hasItems = t.items && t.items.length > 0;
                       const isExpanded = expandedId === t.id;
                       const dompetAsal = wallets.find(w => w.id === t.walletId);
@@ -1288,11 +1271,11 @@ export default function App() {
                                   (isTransfer ? "bg-blue-50 text-blue-600" : 
                                   isDebt ? "bg-orange-50 text-orange-600" : 
                                   isInvest ? "bg-purple-50 text-purple-600" :
-                                  (t.type === 'income' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"))}>
+                                  (typeStr === 'income' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"))}>
                                  {isTransfer ? <ArrowRightLeft className="w-4 h-4" /> : 
                                   isDebt ? <HandCoins className="w-4 h-4" /> : 
                                   isInvest ? <Briefcase className="w-4 h-4" /> :
-                                  (t.type === 'income' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />)}
+                                  (typeStr === 'income' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />)}
                               </div>
                               <div className="min-w-0">
                                 <h4 className="font-semibold text-gray-800 text-sm truncate">{t.description}</h4>
@@ -1315,8 +1298,8 @@ export default function App() {
                               </div>
                             </div>
                             <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                              <span className={"font-bold text-sm " + (isTransfer ? "text-gray-700" : isDebt ? (t.debtType === 'lend' ? "text-rose-600" : "text-emerald-600") : isInvest ? (t.type === 'invest_deposit' ? "text-rose-600" : "text-emerald-600") : (t.type === 'income' ? "text-emerald-600" : "text-rose-600"))}>
-                                 {isTransfer ? "" : isDebt ? (t.debtType === 'lend' ? "-" : "+") : isInvest ? (t.type === 'invest_deposit' ? "-" : "+") : (t.type === 'income' ? "+" : "-")}{formatCurrency(t.amount, t.currency)}
+                              <span className={"font-bold text-sm " + (isTransfer ? "text-gray-700" : isDebt ? (t.debtType === 'lend' ? "text-rose-600" : "text-emerald-600") : isInvest ? (typeStr === 'invest_deposit' ? "text-rose-600" : "text-emerald-600") : (typeStr === 'income' ? "text-emerald-600" : "text-rose-600"))}>
+                                 {isTransfer ? "" : isDebt ? (t.debtType === 'lend' ? "-" : "+") : isInvest ? (typeStr === 'invest_deposit' ? "-" : "+") : (typeStr === 'income' ? "+" : "-")}{formatCurrency(t.amount, t.currency)}
                               </span>
                               <div className="flex items-center gap-2 mt-1">
                                   {hasItems && !isTransfer && !isDebt && !isInvest && (
@@ -1379,7 +1362,8 @@ export default function App() {
 
   const filteredByPeriod = useMemo(() => {
     return transactions.filter(t => {
-      if (t.type === 'debt' || t.type.includes('invest')) return false; 
+      const typeStr = t.type || '';
+      if (typeStr === 'debt' || typeStr.includes('invest')) return false; 
       
       const tDate = new Date(t.transactionDate || t.createdAt);
       
@@ -1458,6 +1442,20 @@ export default function App() {
     }, 0);
     return { income: inc, expense: exp, balance: inc - exp };
   }, [reportTransactions]);
+
+  const getReportTitle = () => {
+    if (reportType === 'yearly') return reportDate.getFullYear();
+    else if (reportType === 'monthly') return reportDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+    else if (reportType === 'weekly') {
+        const current = new Date(reportDate);
+        const day = current.getDay();
+        const diff = current.getDate() - day + (day === 0 ? -6 : 1);
+        const start = new Date(current); start.setDate(diff); 
+        const end = new Date(start); end.setDate(start.getDate() + 6);
+        return start.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) + " - " + end.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+    } else if (reportType === 'daily') return reportDate.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+    return '';
+  };
 
   const renderReportView = () => (
     <div className="animate-in fade-in duration-300">
@@ -1591,7 +1589,6 @@ export default function App() {
 
       return (
         <div className="animate-in fade-in duration-300">
-            {/* Header Dashboard Investasi */}
             <div className="bg-gradient-to-br from-purple-700 via-purple-600 to-indigo-800 rounded-3xl shadow-xl p-6 mb-6 text-white relative overflow-hidden">
                 <div className="absolute -right-4 -top-4 p-4 opacity-10 pointer-events-none">
                     <LineChart className="w-40 h-40" />
@@ -1621,7 +1618,6 @@ export default function App() {
                 <button onClick={() => setShowPortfolioModal(true)} className="text-[10px] font-bold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-full hover:bg-purple-100 transition-colors flex items-center gap-1"><Plus className="w-3 h-3"/> Tambah Baru</button>
             </div>
 
-            {/* List Portfolio */}
             {portfolios.length === 0 ? (
                 <div className="text-center py-10 bg-white rounded-2xl border border-dashed border-gray-200 shadow-sm">
                     <div className="bg-purple-50 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3"><LineChart className="w-6 h-6 text-purple-400" /></div>
@@ -1652,7 +1648,6 @@ export default function App() {
                                 </div>
                             </div>
                             
-                            {/* Action Buttons */}
                             <div className="grid grid-cols-3 gap-2 pt-4 border-t border-gray-50">
                                 <button onClick={() => {setActivePortfolio(p); setInvestActionType('topup'); setShowInvestActionModal(true);}} className="py-2 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-xl text-xs font-bold transition-colors flex flex-col items-center justify-center gap-1"><ArrowUpCircle className="w-4 h-4"/> Top Up</button>
                                 <button onClick={() => {setActivePortfolio(p); setInvestActionType('withdraw'); setShowInvestActionModal(true);}} className="py-2 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-xl text-xs font-bold transition-colors flex flex-col items-center justify-center gap-1"><ArrowDownCircle className="w-4 h-4"/> Tarik</button>
@@ -1664,215 +1659,6 @@ export default function App() {
             )}
         </div>
       );
-  };
-
-  const downloadCSV = () => {
-    if (transactions.length === 0) { setNotification({ type: 'error', message: 'Tidak ada data.' }); return; }
-    
-    const headers = "id,iso_date,tanggal_display,deskripsi,kategori,tipe,mata_uang,jumlah,dompet_asal,dompet_tujuan,biaya_admin,rincian_item,url_struk,debtType,personName,dueDate,status,paidAmount,isSettlement,settledDebtId";
-    const csvRows = [headers];
-    
-    transactions.forEach(t => {
-      const dateObj = new Date(t.transactionDate || t.createdAt);
-      const isoDate = dateObj.toISOString().split('T')[0];
-      const catString = t.categories ? t.categories.join(' & ') : (t.category || 'Umum');
-      const cleanDesc = (t.description||'').split('"').join('""');
-      
-      let itemsString = "";
-      if (t.items && t.items.length > 0) {
-          itemsString = t.items.map(i => {
-              const cleanName = (i.name || '').split('"').join('""');
-              return cleanName + "::" + (i.price || 0) + "::" + (i.category || '');
-          }).join("||");
-      }
-      
-      const row = [
-          t.id || '', isoDate, `"${t.date || ''}"`, `"${cleanDesc}"`, `"${catString}"`,
-          t.type || '', (t.currency || 'IDR'), t.amount || 0, (t.walletId || ''), (t.toWalletId || ''),
-          (t.adminFee || 0), `"${itemsString}"`, `"${(t.receiptUrl || '')}"`,
-          (t.debtType || ''), `"${(t.personName || '')}"`, (t.dueDate || ''), (t.status || ''),
-          (t.paidAmount || 0), (t.isSettlement || false), (t.settledDebtId || '')
-      ].join(",");
-      csvRows.push(row);
-    });
-    
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'Backup_Dompetku_Final.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleImportClick = () => fileInputRef.current?.click();
-
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const rows = event.target.result.split('\n');
-        let importedCount = 0;
-        setLoading(true); setSyncStatus('saving');
-        
-        for (let i = 1; i < rows.length; i++) {
-          const rowText = rows[i].trim();
-          if (!rowText) continue;
-          
-          const cols = []; let cur = ''; let inQuote = false;
-          for (let j = 0; j < rowText.length; j++) {
-              const char = rowText[j];
-              if (char === '"' && rowText[j+1] === '"') { cur += '""'; j++; } 
-              else if (char === '"') { inQuote = !inQuote; } 
-              else if (char === ',' && !inQuote) { cols.push(cur); cur = ''; } 
-              else { cur += char; }
-          }
-          cols.push(cur);
-
-          if (cols && cols.length >= 6) {
-            const clean = (str) => {
-                if(!str) return '';
-                let s = str.trim();
-                if(s.startsWith('"') && s.endsWith('"')) s = s.substring(1, s.length - 1);
-                return s.split('""').join('"');
-            };
-            
-            const hasIdCol = cols[0].length > 15; 
-            const offset = hasIdCol ? 1 : 0; 
-
-            const isoDate = clean(cols[offset]);
-            const description = clean(cols[offset+2]);
-            const categoryRaw = clean(cols[offset+3]);
-            const typeRaw = clean(cols[offset+4]);
-            const type = typeRaw.includes('income') ? 'income' : (typeRaw.includes('transfer') ? 'transfer' : (typeRaw.includes('debt') ? 'debt' : 'expense'));
-            const catsArray = categoryRaw.split(' & ').map(c => c.trim()).filter(Boolean);
-
-            let curr = 'IDR'; let amt = 0; 
-            let wId = wallets[0]?.id || ''; let toWId = ''; let aFee = 0; let parsedItems = []; let recUrl = null;
-            let debtT = '', pName = '', dDate = '', st = '', pAmt = 0, isSet = false, setDId = '';
-
-            if (cols.length >= offset + 6) {
-                curr = clean(cols[offset+5]); amt = parseFloat(clean(cols[offset+6]));
-                wId = clean(cols[offset+7]) || wId;
-                toWId = clean(cols[offset+8]);
-                aFee = parseFloat(clean(cols[offset+9]) || 0);
-                const itemsRaw = clean(cols[offset+10]);
-                if (itemsRaw) parsedItems = itemsRaw.split('||').map(itemStr => { 
-                    const parts = itemStr.split('::'); 
-                    return { name: parts[0] || 'Item', price: parseFloat(parts[1]) || 0, category: parts[2] || '' }; 
-                });
-                recUrl = clean(cols[offset+11]);
-                
-                debtT = clean(cols[offset+12]);
-                pName = clean(cols[offset+13]);
-                dDate = clean(cols[offset+14]);
-                st = clean(cols[offset+15]);
-                pAmt = parseFloat(clean(cols[offset+16]) || 0);
-                isSet = clean(cols[offset+17]) === 'true';
-                setDId = clean(cols[offset+18]);
-            }
-            
-            if (isoDate && description && !isNaN(amt)) {
-              const dateObj = new Date(isoDate);
-              await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), {
-                description, amount: amt, type,
-                categories: catsArray.length > 0 ? catsArray : ['Umum'],
-                category: catsArray[0] || 'Umum',
-                currency: curr, walletId: wId, toWalletId: toWId, adminFee: aFee, items: parsedItems,
-                receiptUrl: recUrl,
-                debtType: debtT, personName: pName, dueDate: dDate, status: st, paidAmount: pAmt,
-                isSettlement: isSet, settledDebtId: setDId,
-                date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
-                transactionDate: dateObj.getTime(), createdAt: Date.now()
-              });
-              importedCount++;
-            }
-          }
-        }
-        setLoading(false); setNotification({ type: 'success', message: 'Berhasil mengimpor ' + importedCount + ' transaksi.' });
-        e.target.value = null;
-      } catch (error) {
-        console.error(error);
-        setLoading(false); setNotification({ type: 'error', message: 'Gagal import file CSV.' });
-      } finally { setSyncStatus('synced'); }
-    };
-    reader.readAsText(file);
-  };
-
-  const handleResetData = async () => {
-    if (!user) return;
-    setLoading(true); setSyncStatus('saving'); setShowResetModal(false);
-    try {
-      const batch = writeBatch(db);
-      const transSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'));
-      transSnapshot.forEach((doc) => batch.delete(doc.ref));
-      const catSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'categories'));
-      catSnapshot.forEach((doc) => batch.delete(doc.ref));
-      const walSnapshot = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'wallets'));
-      walSnapshot.forEach((doc) => batch.delete(doc.ref));
-      
-      await batch.commit();
-      setTransactions([]); setCustomCategories([]); setWallets([]);
-      setNotification({ type: 'success', message: 'Semua Data direset bersih.' });
-    } catch (error) {
-      setNotification({ type: 'error', message: 'Gagal mereset.' });
-    } finally { setLoading(false); setSyncStatus('synced'); }
-  };
-
-  const confirmGenerateDummy = async () => {
-    if (!user) return;
-    setShowDummyModal(false); setLoading(true); setSyncStatus('saving');
-    try {
-      const w1 = wallets[0]?.id || '';
-      const w2 = wallets.length > 1 ? wallets[1].id : w1;
-      
-      const isIDR = defaultCurrency === 'IDR';
-      const multiplier = isIDR ? 100 : 1; 
-      const baseSalary = isIDR ? 5000000 : 250000;
-      const curr = defaultCurrency;
-
-      const dummyData = [
-        { desc: 'Gaji Bulanan', amount: baseSalary, type: 'income', cats: ['Gaji'], dayOffset: 6, curr: curr, walletId: w1, items: [] },
-        { desc: 'Belanja Supermarket (TRIAL)', amount: 4500 * multiplier, type: 'expense', cats: ['Belanja', 'Makanan'], dayOffset: 3, curr: curr, walletId: w2, items: [
-            { name: 'Beras 5kg', price: 2000 * multiplier, category: 'Makanan' },
-            { name: 'Telur Ayam 1 Pack', price: 300 * multiplier, category: 'Makanan' },
-            { name: 'Susu Murni 1L', price: 200 * multiplier, category: 'Makanan' },
-            { name: 'Daging Ayam', price: 1000 * multiplier, category: 'Makanan' },
-            { name: 'Sabun & Odol', price: 1000 * multiplier, category: 'Belanja' }
-        ]},
-        { desc: 'Makan Siang (Matsuya/Warteg)', amount: 600 * multiplier, type: 'expense', cats: ['Makanan'], dayOffset: 1, curr: curr, walletId: w2, items: [] },
-        { desc: 'Top-up Kartu Transport', amount: 2000 * multiplier, type: 'expense', cats: ['Transportasi'], dayOffset: 2, curr: curr, walletId: w1, items: [] }
-      ];
-
-      const now = new Date();
-      for (const item of dummyData) {
-        const dateObj = new Date(now); dateObj.setDate(dateObj.getDate() - item.dayOffset);
-        
-        const tData = {
-          description: item.desc, amount: item.amount, type: item.type, 
-          categories: item.cats, category: item.cats[0] || 'Umum', currency: item.currency || item.curr,
-          walletId: item.walletId,
-          items: item.items,
-          date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
-          transactionDate: dateObj.getTime(), createdAt: Date.now()
-        };
-
-        if (item.type === 'transfer') {
-            tData.toWalletId = item.toWalletId;
-            tData.adminFee = item.adminFee;
-            tData.receivedAmount = item.receivedAmount;
-            tData.targetCurrency = item.targetCurrency;
-        }
-
-        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), tData);
-      }
-      setNotification({ type: 'success', message: 'Data demo realistis ditambahkan.' });
-    } catch (error) {
-      setNotification({ type: 'error', message: 'Gagal membuat demo.' });
-    } finally { setLoading(false); setSyncStatus('synced'); }
   };
 
   const renderSettingsView = () => (
@@ -2124,8 +1910,8 @@ export default function App() {
                         </p>
                     </div>
 
-                    <div className="mb-6">
-                        <label className="block text-xs font-bold text-gray-600 mb-2">Jumlah yang dibayar hari ini:</label>
+                    <div className="mb-4">
+                        <label className="block text-xs font-bold text-gray-600 mb-2">Jumlah yang dibayar:</label>
                         <div className="relative">
                             <span className="absolute left-4 top-3 font-bold text-gray-400">{selectedDebt.currency}</span>
                             <input 
@@ -2510,7 +2296,6 @@ export default function App() {
           </button>
         )}
 
-        {/* 4 MENU BOTTOM NAVIGATION BAR BARU */}
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-2 z-30 md:max-w-md md:mx-auto md:bottom-4 md:rounded-2xl md:border md:shadow-xl">
           <div className="flex justify-around items-center">
             <button onClick={() => setView('home')} className={"flex flex-col items-center p-2 rounded-xl flex-1 transition-all " + (view === 'home' ? "text-blue-600 bg-blue-50" : "text-gray-400 hover:text-gray-600")}><List className="w-6 h-6 mb-1" /><span className="text-[10px] font-bold mt-1">Beranda</span></button>
