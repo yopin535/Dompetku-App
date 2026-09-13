@@ -1218,7 +1218,7 @@ function AppContent() {
 export default function App() {
   return (
     <AppProvider>
-      <AppShell />
+      <AppContent />
     </AppProvider>
   );
 }
