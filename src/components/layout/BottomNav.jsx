@@ -10,7 +10,7 @@ const ITEMS = [
 
 export default function BottomNav({ view, setView }) {
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-2 z-30 md:max-w-md md:mx-auto md:bottom-4 md:rounded-2xl md:border md:shadow-xl">
+    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-2 z-30 md:bottom-4 md:rounded-2xl md:border md:shadow-xl md:left-4 md:right-4">
       <div className="flex justify-around items-center">
         {ITEMS.map(({ value, label, Icon, activeClass }) => (
           <button key={value} onClick={() => setView(value)} className={"flex flex-col items-center p-2 rounded-xl flex-1 transition-all " + (view === value ? activeClass : "text-gray-400 hover:text-gray-600")}><Icon className="w-6 h-6 mb-1" /><span className="text-[10px] font-bold mt-1">{label}</span></button>

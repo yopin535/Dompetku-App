@@ -22,6 +22,7 @@ import Header from './components/layout/Header';
 import HomePage from './pages/HomePage';
 import AppBanner from './components/layout/AppBanner';
 import BottomNav from './components/layout/BottomNav';
+import Sidebar from './components/layout/Sidebar';
 import LoadingOverlay from './components/common/LoadingOverlay';
 import Toast from './components/common/Toast';
 import ImagePreview from './components/common/ImagePreview';
@@ -978,8 +979,11 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-800 md:p-8 pb-24 relative">
-      <div className="max-w-md mx-auto relative min-h-screen shadow-xl md:rounded-[2rem] bg-gray-50 overflow-hidden">
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-800 md:p-8 pb-24 lg:pb-8 relative">
+      <div className="max-w-md lg:max-w-6xl mx-auto relative min-h-screen shadow-xl md:rounded-[2rem] bg-gray-50 overflow-hidden">
+        <div className="lg:flex lg:gap-6 lg:p-6">
+          <Sidebar view={view} setView={setView} />
+          <div className="flex-1 min-w-0">
         
         {view === 'home' && (
           <Header
@@ -1209,7 +1213,11 @@ function AppContent() {
           </button>
         )}
 
-        <BottomNav view={view} setView={setView} />
+        <div className="lg:hidden">
+          <BottomNav view={view} setView={setView} />
+        </div>
+          </div>
+        </div>
       </div>
     </div>
   );

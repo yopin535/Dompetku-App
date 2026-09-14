@@ -63,6 +63,7 @@
 | 2026-09-13 | opencode (lanjutan) | Phase 4: buat `.env.example` + `firestore.rules` per-UID, hapus hardcoded secret (throw bila env hilang). `.env.*` verified tak ter-track. Build OK. |
 | 2026-09-13 | opencode (lanjutan) | Tailwind CDN → PostCSS (tailwind@3 + autoprefixer, `index.css`, hapus CDN script, hapus `styles.css`). CSS bundle 38KB. Build + dev HTTP 200 OK. |
 | 2026-09-13 | opencode (lanjutan) | Rapikan git: 5 commit bersih di `develop` (fondasi, context/hooks, components/pages, App.js, styles.css). Tanpa push. `.env.*` verified tak ter-track. Build OK. |
+| 2026-09-13 | opencode (lanjutan) | Desktop tahap 1: `Sidebar` lg+, container `max-w-6xl`, `BottomNav` khusus mobile. Build + dev HTTP 200 OK. |
 | 2026-09-13 | opencode (lanjutan) | Fix crash `AppShell is not defined` (wrapper render `AppContent`). Build + dev HTTP 200, tanpa error runtime. |
 | 2026-09-13 | opencode (lanjutan) | Phase 4 final repo: `ErrorBoundary` di root + `SkeletonHome` saat loading awal. Build + dev HTTP 200 OK. |
 | 2026-09-13 | opencode (lanjutan) | Cleanup refactor: hapus duplikasi `getCurrentDate`/`currencies`/kategori, pakai `useWallets`/`useCategories`/`useInvestments` di handler, hapus 5 import tak terpakai. `App.js` → 1229 baris. Build OK. |
