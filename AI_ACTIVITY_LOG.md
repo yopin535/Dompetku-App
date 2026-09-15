@@ -65,6 +65,7 @@
 | 2026-09-13 | opencode (lanjutan) | Rapikan git: 5 commit bersih di `develop` (fondasi, context/hooks, components/pages, App.js, styles.css). Tanpa push. `.env.*` verified tak ter-track. Build OK. |
 | 2026-09-13 | opencode (lanjutan) | Desktop tahap 1: `Sidebar` lg+, container `max-w-6xl`, `BottomNav` khusus mobile. Build + dev HTTP 200 OK. |
 | 2026-09-13 | opencode (lanjutan) | Desktop tahap 2: grid lg untuk Home (form sticky + list), Report (ringkasan + distribusi), Investasi (2 kolom), Settings (2 kolom). Build OK. |
+| 2026-09-13 | opencode (lanjutan) | Desktop tahap 3: tabel transaksi lg, container `max-w-7xl`, 8 modal `lg:max-w-lg`. Build + dev HTTP 200 OK. |
 | 2026-09-13 | opencode (lanjutan) | Fix crash `AppShell is not defined` (wrapper render `AppContent`). Build + dev HTTP 200, tanpa error runtime. |
 | 2026-09-13 | opencode (lanjutan) | Phase 4 final repo: `ErrorBoundary` di root + `SkeletonHome` saat loading awal. Build + dev HTTP 200 OK. |
 | 2026-09-13 | opencode (lanjutan) | Cleanup refactor: hapus duplikasi `getCurrentDate`/`currencies`/kategori, pakai `useWallets`/`useCategories`/`useInvestments` di handler, hapus 5 import tak terpakai. `App.js` → 1229 baris. Build OK. |

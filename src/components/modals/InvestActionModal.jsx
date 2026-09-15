@@ -10,7 +10,7 @@ export default function InvestActionModal({
   if (!open || !activePortfolio) return null;
   return (
     <div className="fixed inset-0 bg-black/60 z-[100] flex flex-col justify-end md:items-center md:justify-center animate-in slide-in-from-bottom-full md:slide-in-from-bottom-0 duration-300">
-      <div className="bg-white rounded-t-3xl md:rounded-2xl p-6 w-full md:max-w-md shadow-2xl">
+      <div className="bg-white rounded-t-3xl md:rounded-2xl p-6 w-full md:max-w-md lg:max-w-lg shadow-2xl">
         <div className="flex justify-between items-center mb-6">
           <div>
             <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">

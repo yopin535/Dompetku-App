@@ -12,7 +12,7 @@ export default function InstallmentModal({
   if (!open || !selectedDebt) return null;
   return (
     <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95">
+      <div className="bg-white rounded-2xl w-full max-w-sm lg:max-w-lg p-6 shadow-2xl animate-in zoom-in-95">
         <div className="flex justify-between items-center mb-4">
           <h3 className="font-bold text-lg text-gray-800">Catat Pembayaran</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>

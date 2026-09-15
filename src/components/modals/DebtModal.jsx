@@ -11,7 +11,7 @@ export default function DebtModal({
   if (!open) return null;
   return (
     <div className="fixed inset-0 bg-black/50 z-[80] flex flex-col justify-end md:items-center md:justify-center animate-in slide-in-from-bottom-full md:slide-in-from-bottom-0 md:fade-in duration-300">
-      <div className="bg-gray-50 w-full md:max-w-md h-[90vh] md:h-[85vh] md:rounded-2xl rounded-t-3xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="bg-gray-50 w-full md:max-w-md lg:max-w-lg h-[90vh] md:h-[85vh] md:rounded-2xl rounded-t-3xl shadow-2xl flex flex-col overflow-hidden">
         <div className="bg-white p-4 border-b border-gray-100 flex justify-between items-center z-10 shadow-sm">
           <div className="flex items-center gap-2 text-orange-600">
             <HandCoins className="w-6 h-6" />

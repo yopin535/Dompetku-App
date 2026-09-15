@@ -980,7 +980,7 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-800 md:p-8 pb-24 lg:pb-8 relative">
-      <div className="max-w-md lg:max-w-6xl mx-auto relative min-h-screen shadow-xl md:rounded-[2rem] bg-gray-50 overflow-hidden">
+      <div className="max-w-md lg:max-w-7xl mx-auto relative min-h-screen shadow-xl md:rounded-[2rem] bg-gray-50 overflow-hidden">
         <div className="lg:flex lg:gap-6 lg:p-6">
           <Sidebar view={view} setView={setView} />
           <div className="flex-1 min-w-0">
