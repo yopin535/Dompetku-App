@@ -48,7 +48,7 @@ export default function InvestasiPage({
                     <p className="text-gray-500 text-xs px-8">Catat aset seperti Saham, Reksa Dana, atau Kripto di sini.</p>
                 </div>
             ) : (
-                <div className="space-y-4">
+                <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
                     {portfolios.map(p => {
                         const m = parseFloat(p.totalInvested) || 0;
                         const v = parseFloat(p.currentValue) || 0;

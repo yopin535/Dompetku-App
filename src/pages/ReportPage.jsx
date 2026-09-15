@@ -23,7 +23,8 @@ export default function ReportPage({
          ))}
       </div>
       
-      <div className="bg-gradient-to-br from-indigo-600 via-blue-600 to-blue-800 rounded-3xl shadow-xl p-6 mb-6 text-white relative overflow-hidden">
+      <div className="lg:grid lg:grid-cols-2 lg:gap-6 lg:items-start">
+      <div className="bg-gradient-to-br from-indigo-600 via-blue-600 to-blue-800 rounded-3xl shadow-xl p-6 mb-6 lg:mb-0 text-white relative overflow-hidden">
         <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
             <TrendingUp className="w-32 h-32" />
         </div>
@@ -51,7 +52,6 @@ export default function ReportPage({
             </div>
         </div>
       </div>
-        
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 mb-6">
         <div className="flex justify-between items-center mb-6">
             <h3 className="font-bold text-gray-800 flex items-center gap-2"><PieChart className="w-4 h-4 text-blue-600" /> Distribusi Pengeluaran</h3>
@@ -127,6 +127,7 @@ export default function ReportPage({
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

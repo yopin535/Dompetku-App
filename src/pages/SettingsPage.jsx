@@ -31,6 +31,7 @@ export default function SettingsPage({
         )}
       </button>
 
+      <div className="lg:grid lg:grid-cols-2 lg:gap-6">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
         <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Akun Saya</h3>
         <div className="flex items-center justify-between">
@@ -150,6 +151,8 @@ export default function SettingsPage({
             </div>
           </button>
         </div>
+      </div>
+
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-red-100 p-5 mb-6">
