@@ -5,7 +5,7 @@ import WalletCard from '../layout/WalletCard';
 export default function WalletStrip({ wallets, walletBalances, hideBalance, formatCurrency, onAdd }) {
   if (!wallets || wallets.length === 0) return null;
   return (
-    <div className="flex overflow-x-auto gap-3 pb-4 pt-1 snap-x hide-scrollbar px-1">
+    <div className="flex overflow-x-auto gap-3 pb-4 pt-1 snap-x hide-scrollbar px-1 lg:grid lg:grid-cols-3 lg:overflow-visible lg:snap-none">
       {wallets.map(w => (
         <WalletCard key={w.id} wallet={w} walletBalances={walletBalances} hideBalance={hideBalance} formatCurrency={formatCurrency} />
       ))}

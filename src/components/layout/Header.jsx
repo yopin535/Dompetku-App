@@ -9,7 +9,7 @@ export default function Header({
   filterType, sortBy, setShowFilterSheet, setView
 }) {
   return (
-    <div className="bg-gradient-to-b from-blue-700 to-indigo-800 px-5 pt-6 pb-6 text-white rounded-b-[2rem] shadow-lg mb-2 relative overflow-hidden transition-all duration-300">
+    <div className="bg-gradient-to-b from-blue-700 to-indigo-800 px-5 pt-6 pb-6 text-white rounded-b-[2rem] lg:rounded-3xl shadow-lg mb-2 relative overflow-hidden transition-all duration-300">
       <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
         <Sparkles className="w-32 h-32" />
       </div>
