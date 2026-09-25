@@ -6,7 +6,7 @@ export default function ReportPage({
   reportType, setReportType,
   wallets, reportWalletId, setReportWalletId,
   changeReportPeriod, getReportTitle, formatCurrency, reportSummary, reportCurrency,
-  transactions, defaultCurrency, categoryStats, expandedId, setExpandedId, reportTransactions
+  transactions, defaultCurrency, categoryStats, expandedId, setExpandedId, reportTransactions, setReportCurrency
 }) {
   const availableCurrencies = [...new Set([...CURRENCIES.map(c => c.code), ...transactions.map(t => t.currency || defaultCurrency)])];
   
