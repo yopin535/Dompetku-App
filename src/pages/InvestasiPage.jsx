@@ -1,10 +1,9 @@
-import React, { useMemo } from 'react';
-import { LineChart, Briefcase, TrendingUp, TrendingDown, Plus, ArrowUpCircle, ArrowDownCircle, RefreshCw, Globe, Target, Calendar, Edit2, Trash2 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { LineChart, Briefcase, TrendingUp, TrendingDown, Plus, ArrowUpCircle, ArrowDownCircle, RefreshCw, Globe, Target, Calendar, MoreHorizontal } from 'lucide-react';
 
 export default function InvestasiPage({
   portfolios, hideBalance, formatCurrency, defaultCurrency,
-  setShowPortfolioModal, setActivePortfolio, setInvestActionType, setShowInvestActionModal,
-  setShowEditPortfolioModal, onDeletePortfolio
+  setShowPortfolioModal, setActivePortfolio, setInvestActionType, setShowInvestActionModal
 }) {
   // Multi-currency summary per currency
   const currencySummary = useMemo(() => {
@@ -103,7 +102,7 @@ export default function InvestasiPage({
 
             return (
               <div key={p.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 relative overflow-hidden">
-                <div className="absolute top-3 right-3">
+                <div className="absolute top-3 right-3 flex items-center gap-1">
                   <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">{currency}</span>
                 </div>
                 
@@ -135,10 +134,6 @@ export default function InvestasiPage({
                   <button onClick={() => {setActivePortfolio(p); setInvestActionType('topup'); setShowInvestActionModal(true);}} className="py-2 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-xl text-xs font-bold transition-colors flex flex-col items-center justify-center gap-1"><ArrowUpCircle className="w-4 h-4"/> Top Up</button>
                   <button onClick={() => {setActivePortfolio(p); setInvestActionType('withdraw'); setShowInvestActionModal(true);}} className="py-2 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-xl text-xs font-bold transition-colors flex flex-col items-center justify-center gap-1"><ArrowDownCircle className="w-4 h-4"/> Tarik</button>
                   <button onClick={() => {setActivePortfolio(p); setInvestActionType('update'); setShowInvestActionModal(true);}} className="py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl text-xs font-bold transition-colors flex flex-col items-center justify-center gap-1"><RefreshCw className="w-4 h-4"/> Update Harga</button>
-                </div>
-                <div className="grid grid-cols-2 gap-2 pt-2">
-                  <button onClick={() => setShowEditPortfolioModal(p)} className="py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1"><Edit2 className="w-4 h-4"/> Edit</button>
-                  <button onClick={() => onDeletePortfolio(p.id)} className="py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1"><Trash2 className="w-4 h-4"/> Hapus</button>
                 </div>
               </div>
             );
