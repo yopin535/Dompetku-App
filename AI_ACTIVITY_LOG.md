@@ -71,6 +71,15 @@
 | 2026-09-13 | opencode (lanjutan) | Phase 4 final repo: `ErrorBoundary` di root + `SkeletonHome` saat loading awal. Build + dev HTTP 200 OK. |
 | 2026-09-13 | opencode (lanjutan) | Cleanup refactor: hapus duplikasi `getCurrentDate`/`currencies`/kategori, pakai `useWallets`/`useCategories`/`useInvestments` di handler, hapus 5 import tak terpakai. `App.js` → 1229 baris. Build OK. |
 | 2026-09-13 | opencode (lanjutan) | Inline `renderHomeView` terakhir, rapikan `.gitignore` (build/npm.log), hapus sampah tree. `App.js` → 1224 baris. Build OK. Siap commit per fase. |
+| 2026-09-25 | opencode | **Fitur Multi-currency Investment**: Tambah `notifications`, `unreadCount`, `newPortfolioCurrency`, `newPortfolioTargetType/Value/Duration/CustomDate` ke AppContext. Buat `useNotifications.js` (CRUD + realtime listener). Buat `NotificationIcon.jsx` (Bell + badge di Header). Buat `NotificationPage.jsx` (list notifikasi, mark read/delete). Update `InvestasiPage.jsx` (multi-currency summary grid per currency + target badge per portfolio). Update `PortfolioModal.jsx` (currency selector + target return nominal/persen + durasi). Update `handleSavePortfolio` di App.js (simpan target fields). Update `useInvestments.js` (auto-check target 50%/80%/100%, create notification). Update `firebaseService.js` (notifications CRUD + cleanup). Push ke main. |
+| 2026-09-25 | opencode | **Bug fixes**: Fix `items`/`selectedCategories` missing dari AppContext value. Fix `setNotifications` not defined. Fix manifest.json tidak copy ke build (tambah postbuild script). Fix ReportPage `setReportCurrency` not defined (tambah ke destructuring). Fix ReportPage dropdown currency hanya tampilkan currency dari transactions (tambah `CURRENCIES` import). Build OK. Push ke main. |
+| 2026-09-25 | opencode | **Deploy ke main**: commit 2e00b99 (fitur investasi), bc1a4e0 (manifest fix), 3badcef (currency dropdown), 5fb2f20 (setReportCurrency). Semua feature aktif. Pending: Vercel env vars perlu di-set di dashboard. |
+
+## 6. Riwayat Sesi (Lanjut)
+
+| Tanggal (UTC) | Pelaku | Ringkasan |
+|---|---|---|
+| 2026-09-25 | opencode | Update `AI_ACTIVITY_LOG.md` dan `HANDOVER_AI.md` dengan status terkini. Implementasi fitur edit/hapus portofolio di InvestasiPage + PortfolioModal (tambah tombol Edit/Hapus, update handleSavePortfolio). |
 
 ## 7. Aturan Untuk AI Berikutnya
 

@@ -56,6 +56,8 @@ export function AppProvider({ children }) {
   const [investActionType, setInvestActionType] = useState('topup');
   const [activePortfolio, setActivePortfolio] = useState(null);
   const [investAmount, setInvestAmount] = useState('');
+  const [showEditPortfolioModal, setShowEditPortfolioModal] = useState(false);
+  const [editPortfolioModalData, setEditPortfolioModalData] = useState(null);
 
   const [reportWalletId, setReportWalletId] = useState('all');
 
@@ -147,6 +149,8 @@ export function AppProvider({ children }) {
         investActionType, setInvestActionType,
         activePortfolio, setActivePortfolio,
         investAmount, setInvestAmount,
+        showEditPortfolioModal, setShowEditPortfolioModal,
+        editPortfolioModalData, setEditPortfolioModalData,
         type, setType,
         description, setDescription,
         amount, setAmount,

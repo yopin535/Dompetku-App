@@ -47,11 +47,12 @@ import { useWallets } from './hooks/useWallets';
 import { useCategories } from './hooks/useCategories';
 import { useInvestments } from './hooks/useInvestments';
 import { useNotifications } from './hooks/useNotifications';
+import EditPortfolioModal from './components/modals/EditPortfolioModal';
 
 function AppContent() {
-  const { view, setView, loading, setLoading, notification, setNotification, syncStatus, setSyncStatus, user, setUser, transactions, setTransactions, customCategories, setCustomCategories, wallets, setWallets, portfolios, setPortfolios, notifications, setNotifications, unreadCount, setUnreadCount } = useApp();
+  const { view, setView, loading, setLoading, notification, setNotification, syncStatus, setSyncStatus, user, setUser, transactions, setTransactions, customCategories, setCustomCategories, wallets, setWallets, portfolios, setPortfolios, notifications, setNotifications, unreadCount, setUnreadCount, showPortfolioModal, setShowPortfolioModal, newPortfolioName, setNewPortfolioName, showInvestActionModal, setShowInvestActionModal, investActionType, setInvestActionType, activePortfolio, setActivePortfolio, investAmount, setInvestAmount, reportWalletId, setReportWalletId } = useApp();
   
-  const { defaultCurrency, setDefaultCurrency, geminiKey, setGeminiKey, gasUrl, setGasUrl, hideBalance, setHideBalance, showFloatingAdd, setShowFloatingAdd, showCatModal, setShowCatModal, showResetModal, setShowResetModal, showWalletModal, setShowWalletModal, showDummyModal, setShowDummyModal, showItemCatModal, setShowItemCatModal, activeItemIndex, setActiveItemIndex, newCatName, setNewCatName, previewImage, setPreviewImage, showDebtModal, setShowDebtModal, activeDebtTab, setActiveDebtTab, searchQuery, setSearchQuery, isSearchOpen, setIsSearchOpen, showFilterSheet, setShowFilterSheet, filterType, setFilterType, sortBy, setSortBy, showInstallmentModal, setShowInstallmentModal, selectedDebt, setSelectedDebt, installmentAmount, setInstallmentAmount, installmentDate, setInstallmentDate, installmentWalletId, setInstallmentWalletId, showPortfolioModal, setShowPortfolioModal, newPortfolioName, setNewPortfolioName, showInvestActionModal, setShowInvestActionModal, investActionType, setInvestActionType, activePortfolio, setActivePortfolio, investAmount, setInvestAmount, reportWalletId, setReportWalletId } = useApp();
+  const { defaultCurrency, setDefaultCurrency, geminiKey, setGeminiKey, gasUrl, setGasUrl, hideBalance, setHideBalance, showFloatingAdd, setShowFloatingAdd, showCatModal, setShowCatModal, showResetModal, setShowResetModal, showWalletModal, setShowWalletModal, showDummyModal, setShowDummyModal, showItemCatModal, setShowItemCatModal, activeItemIndex, setActiveItemIndex, newCatName, setNewCatName, previewImage, setPreviewImage, showDebtModal, setShowDebtModal, activeDebtTab, setActiveDebtTab, searchQuery, setSearchQuery, isSearchOpen, setIsSearchOpen, showFilterSheet, setShowFilterSheet, filterType, setFilterType, sortBy, setSortBy, showInstallmentModal, setShowInstallmentModal, selectedDebt, setSelectedDebt, installmentAmount, setInstallmentAmount, installmentDate, setInstallmentDate, installmentWalletId, setInstallmentWalletId, newPortfolioCurrency, setNewPortfolioCurrency, newPortfolioTargetType, setNewPortfolioTargetType, newPortfolioTargetValue, setNewPortfolioTargetValue, newPortfolioDuration, setNewPortfolioDuration, newPortfolioCustomDate, setNewPortfolioCustomDate, showEditPortfolioModal, setShowEditPortfolioModal, editPortfolioModalData, setEditPortfolioModalData } = useApp();
 
   const { type, setType, description, setDescription, amount, setAmount, currency, setCurrency, date, setDate, selectedCategories, setSelectedCategories, items, setItems, receiptImageUrl, setReceiptImageUrl, walletId, setWalletId, toWalletId, setToWalletId, receivedAmount, setReceivedAmount, adminFee, setAdminFee, debtType, setDebtType, personName, setPersonName, dueDate, setDueDate, newWalletName, setNewWalletName, newWalletCurrency, setNewWalletCurrency, newWalletBalance, setNewWalletBalance, editId, setEditId, homeViewDate, setHomeViewDate, expandedId, setExpandedId, reportDate, setReportDate, reportType, setReportType, reportCurrency, setReportCurrency, isScanning, setIsScanning, uploadStatus, setUploadStatus } = useApp();
   const fileInputRef = useRef(null);
@@ -921,6 +922,38 @@ function AppContent() {
       } catch (error) { setSyncStatus('offline'); }
   };
 
+  const handleUpdatePortfolio = async (id, data) => {
+    if (!user) return;
+    setSyncStatus('saving');
+    try {
+      const updateData = {
+        ...data,
+        targetReturn: data.targetReturn ? parseFloat(data.targetReturn) : null,
+        targetReturnType: data.targetReturnType,
+        targetDuration: data.targetDuration,
+        targetEndDate: data.targetEndDate
+      };
+      await firebaseService.updatePortfolio(id, updateData);
+      setShowEditPortfolioModal(false);
+      setNotification({ type: 'success', message: 'Portofolio diperbarui.' });
+    } catch (error) { 
+      setSyncStatus('offline'); 
+      setNotification({ type: 'error', message: 'Gagal memperbarui portofolio.' });
+    }
+  };
+
+  const handleDeletePortfolio = async (id) => {
+    if (!user) return;
+    setSyncStatus('saving');
+    try {
+      await firebaseService.deletePortfolio(id);
+      setNotification({ type: 'success', message: 'Portofolio dihapus.' });
+    } catch (error) { 
+      setSyncStatus('offline'); 
+      setNotification({ type: 'error', message: 'Gagal menghapus portofolio.' });
+    }
+  };
+
   const processInvestAction = async () => {
       if (!user || !activePortfolio) return;
 
@@ -1194,7 +1227,24 @@ function AppContent() {
           onClose={() => setShowPortfolioModal(false)}
           newPortfolioName={newPortfolioName}
           setNewPortfolioName={setNewPortfolioName}
+          newPortfolioCurrency={newPortfolioCurrency}
+          setNewPortfolioCurrency={setNewPortfolioCurrency}
+          newPortfolioTargetType={newPortfolioTargetType}
+          setNewPortfolioTargetType={setNewPortfolioTargetType}
+          newPortfolioTargetValue={newPortfolioTargetValue}
+          setNewPortfolioTargetValue={setNewPortfolioTargetValue}
+          newPortfolioDuration={newPortfolioDuration}
+          setNewPortfolioDuration={setNewPortfolioDuration}
+          newPortfolioCustomDate={newPortfolioCustomDate}
+          setNewPortfolioCustomDate={setNewPortfolioCustomDate}
           onSave={handleSavePortfolio}
+        />
+        <EditPortfolioModal
+          open={showEditPortfolioModal}
+          onClose={() => setShowEditPortfolioModal(false)}
+          portfolio={editPortfolioModalData}
+          onSave={handleUpdatePortfolio}
+          onDelete={handleDeletePortfolio}
         />
         <InvestActionModal
           open={showInvestActionModal}
@@ -1305,6 +1355,8 @@ function AppContent() {
                 setActivePortfolio={setActivePortfolio}
                 setInvestActionType={setInvestActionType}
                 setShowInvestActionModal={setShowInvestActionModal}
+                setShowEditPortfolioModal={setShowEditPortfolioModal}
+                onDeletePortfolio={handleDeletePortfolio}
               />
             </div>
           )}
