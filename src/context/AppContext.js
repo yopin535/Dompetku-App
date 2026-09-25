@@ -8,6 +8,8 @@ export function AppProvider({ children }) {
   const [customCategories, setCustomCategories] = useState([]);
   const [wallets, setWallets] = useState([]);
   const [portfolios, setPortfolios] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('home');
   const [notification, setNotification] = useState(null);
@@ -45,6 +47,11 @@ export function AppProvider({ children }) {
 
   const [showPortfolioModal, setShowPortfolioModal] = useState(false);
   const [newPortfolioName, setNewPortfolioName] = useState('');
+  const [newPortfolioCurrency, setNewPortfolioCurrency] = useState(defaultCurrency);
+  const [newPortfolioTargetType, setNewPortfolioTargetType] = useState('amount');
+  const [newPortfolioTargetValue, setNewPortfolioTargetValue] = useState('');
+  const [newPortfolioDuration, setNewPortfolioDuration] = useState('3_months');
+  const [newPortfolioCustomDate, setNewPortfolioCustomDate] = useState('');
   const [showInvestActionModal, setShowInvestActionModal] = useState(false);
   const [investActionType, setInvestActionType] = useState('topup');
   const [activePortfolio, setActivePortfolio] = useState(null);
@@ -98,6 +105,8 @@ export function AppProvider({ children }) {
         customCategories, setCustomCategories,
         wallets, setWallets,
         portfolios, setPortfolios,
+        notifications, setNotifications,
+        unreadCount, setUnreadCount,
         loading, setLoading,
         view, setView,
         notification, setNotification, showNotification,
@@ -129,11 +138,15 @@ export function AppProvider({ children }) {
         installmentWalletId, setInstallmentWalletId,
         showPortfolioModal, setShowPortfolioModal,
         newPortfolioName, setNewPortfolioName,
+        newPortfolioCurrency, setNewPortfolioCurrency,
+        newPortfolioTargetType, setNewPortfolioTargetType,
+        newPortfolioTargetValue, setNewPortfolioTargetValue,
+        newPortfolioDuration, setNewPortfolioDuration,
+        newPortfolioCustomDate, setNewPortfolioCustomDate,
         showInvestActionModal, setShowInvestActionModal,
         investActionType, setInvestActionType,
         activePortfolio, setActivePortfolio,
         investAmount, setInvestAmount,
-        reportWalletId, setReportWalletId,
         type, setType,
         description, setDescription,
         amount, setAmount,

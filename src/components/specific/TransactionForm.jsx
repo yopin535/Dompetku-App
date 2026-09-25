@@ -169,10 +169,10 @@ export default function TransactionForm({
                     <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
                         <div className="flex items-center justify-between mb-3">
                            <label className="text-xs font-bold text-gray-600 flex items-center gap-1"><Receipt className="w-3.5 h-3.5" /> Rincian Barang (Opsional)</label>
-                           <button type="button" onClick={handleAddItem} className="text-[10px] bg-white border border-gray-200 px-2 py-1 rounded shadow-sm font-medium hover:bg-gray-100">+ Tambah Baris</button>
+                            <button type="button" onClick={handleAddItem} className="text-[10px] bg-white border border-gray-200 px-2 py-1 rounded shadow-sm font-medium hover:bg-gray-100">+ Tambah Baris</button>
                         </div>
                         
-                        {items.length === 0 ? (
+                        {!items || items.length === 0 ? (
                             <p className="text-[10px] text-gray-400 text-center italic mb-2">Tambah manual rincian harga untuk pelacakan</p>
                         ) : (
                             <div className="space-y-2 mb-3 max-h-48 overflow-y-auto pr-1">

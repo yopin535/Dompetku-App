@@ -180,6 +180,112 @@ export const firebaseService = {
     }
   },
 
+  async deletePortfolio(id, userId) {
+    try {
+      const docRef = getDocRef('portfolios', id, userId);
+      await deleteDoc(docRef);
+    } catch (error) {
+      console.error('Error deleting portfolio:', error);
+      throw error;
+    }
+  },
+
+  // Notifications
+  async addNotification(data, userId) {
+    try {
+      const col = getCollectionRef('notifications', userId);
+      const docRef = await addDoc(col, {
+        ...data,
+        createdAt: data.createdAt || Date.now(),
+        isRead: false
+      });
+      return docRef.id;
+    } catch (error) {
+      console.error('Error adding notification:', error);
+      throw error;
+    }
+  },
+
+  async getNotifications(userId) {
+    try {
+      const col = getCollectionRef('notifications', userId);
+      const snapshot = await getDocs(col);
+      const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      docs.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      return docs;
+    } catch (error) {
+      console.error('Error getting notifications:', error);
+      throw error;
+    }
+  },
+
+  async getUnreadNotifications(userId) {
+    try {
+      const col = getCollectionRef('notifications', userId);
+      const snapshot = await getDocs(col);
+      return snapshot.docs
+        .filter(doc => !doc.data().isRead)
+        .map(d => ({ id: d.id, ...d.data() }));
+    } catch (error) {
+      console.error('Error getting unread notifications:', error);
+      throw error;
+    }
+  },
+
+  async getUnreadCount(userId) {
+    try {
+      const col = getCollectionRef('notifications', userId);
+      const snapshot = await getDocs(col);
+      return snapshot.docs.filter(doc => !doc.data().isRead).length;
+    } catch (error) {
+      console.error('Error getting unread count:', error);
+      throw error;
+    }
+  },
+
+  async updateNotification(id, data, userId) {
+    try {
+      const docRef = getDocRef('notifications', id, userId);
+      await updateDoc(docRef, data);
+    } catch (error) {
+      console.error('Error updating notification:', error);
+      throw error;
+    }
+  },
+
+  async deleteNotification(id, userId) {
+    try {
+      const docRef = getDocRef('notifications', id, userId);
+      await deleteDoc(docRef);
+    } catch (error) {
+      console.error('Error deleting notification:', error);
+      throw error;
+    }
+  },
+
+  async cleanupOldNotifications(userId, daysThreshold = 30) {
+    try {
+      const col = getCollectionRef('notifications', userId);
+      const now = Date.now();
+      const threshold = now - (daysThreshold * 24 * 60 * 60 * 1000);
+      
+      const snapshot = await getDocs(col);
+      const batch = writeBatch(db);
+      
+      snapshot.docs.forEach(doc => {
+        if (doc.data().createdAt < threshold) {
+          batch.delete(doc.ref);
+        }
+      });
+      
+      await batch.commit();
+      return { deleted: batch._writeBatch._ops.length };
+    } catch (error) {
+      console.error('Error cleaning old notifications:', error);
+      throw error;
+    }
+  },
+
   // Batch operations
   async resetData(userId) {
     try {

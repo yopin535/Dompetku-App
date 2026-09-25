@@ -40,14 +40,16 @@ import DebtModal from './components/modals/DebtModal';
 import ReportPage from './pages/ReportPage';
 import InvestasiPage from './pages/InvestasiPage';
 import SettingsPage from './pages/SettingsPage';
+import NotificationPage from './pages/NotificationPage';
 import { AppProvider, useApp } from './context/AppContext';
 import { useTransactions } from './hooks/useTransactions';
 import { useWallets } from './hooks/useWallets';
 import { useCategories } from './hooks/useCategories';
 import { useInvestments } from './hooks/useInvestments';
+import { useNotifications } from './hooks/useNotifications';
 
 function AppContent() {
-  const { view, setView, loading, setLoading, notification, setNotification, syncStatus, setSyncStatus, user, setUser, transactions, setTransactions, customCategories, setCustomCategories, wallets, setWallets, portfolios, setPortfolios } = useApp();
+  const { view, setView, loading, setLoading, notification, setNotification, syncStatus, setSyncStatus, user, setUser, transactions, setTransactions, customCategories, setCustomCategories, wallets, setWallets, portfolios, setPortfolios, notifications, setNotifications, unreadCount, setUnreadCount } = useApp();
   
   const { defaultCurrency, setDefaultCurrency, geminiKey, setGeminiKey, gasUrl, setGasUrl, hideBalance, setHideBalance, showFloatingAdd, setShowFloatingAdd, showCatModal, setShowCatModal, showResetModal, setShowResetModal, showWalletModal, setShowWalletModal, showDummyModal, setShowDummyModal, showItemCatModal, setShowItemCatModal, activeItemIndex, setActiveItemIndex, newCatName, setNewCatName, previewImage, setPreviewImage, showDebtModal, setShowDebtModal, activeDebtTab, setActiveDebtTab, searchQuery, setSearchQuery, isSearchOpen, setIsSearchOpen, showFilterSheet, setShowFilterSheet, filterType, setFilterType, sortBy, setSortBy, showInstallmentModal, setShowInstallmentModal, selectedDebt, setSelectedDebt, installmentAmount, setInstallmentAmount, installmentDate, setInstallmentDate, installmentWalletId, setInstallmentWalletId, showPortfolioModal, setShowPortfolioModal, newPortfolioName, setNewPortfolioName, showInvestActionModal, setShowInvestActionModal, investActionType, setInvestActionType, activePortfolio, setActivePortfolio, investAmount, setInvestAmount, reportWalletId, setReportWalletId } = useApp();
 
@@ -157,7 +159,13 @@ function AppContent() {
       setPortfolios(ports);
     }, user.uid);
 
-    return () => { unsubTrans(); unsubCat(); unsubWal(); unsubPort(); };
+    // Listener Notifikasi
+    const unsubNotif = firebaseService.subscribeToCollection('notifications', (notifs) => {
+      setNotifications(notifs);
+      setUnreadCount(notifs.filter(n => !n.isRead).length);
+    }, user.uid);
+
+    return () => { unsubTrans(); unsubCat(); unsubWal(); unsubPort(); unsubNotif(); };
   }, [user, defaultCurrency]);
 
   const handleSaveSettings = (key, val) => {
@@ -403,6 +411,68 @@ function AppContent() {
     }
   };
 
+  const generateDemoPortfolios = async () => {
+    if (!user) return;
+    setLoading(true);
+    setSyncStatus('saving');
+    try {
+      const demoPortfolios = [
+        {
+          name: "Saham BBCA",
+          currency: "IDR",
+          totalInvested: 10000000,
+          currentValue: 11500000,
+          targetReturn: 15000000,
+          targetReturnType: "amount",
+          targetDuration: "3_months",
+        },
+        {
+          name: "Kripto Bitcoin",
+          currency: "USD",
+          totalInvested: 5000,
+          currentValue: 6000,
+          targetReturn: 7000,
+          targetReturnType: "amount",
+          targetDuration: "6_months",
+        },
+        {
+          name: "Reksa Dana Equity",
+          currency: "IDR",
+          totalInvested: 50000000,
+          currentValue: 55000000,
+          targetReturn: 60000000,
+          targetReturnType: "percentage",
+          targetDuration: "3_months",
+        },
+        {
+          name: "Kripto Ethereum",
+          currency: "USD",
+          totalInvested: 3000,
+          currentValue: 3500,
+          targetReturn: 4000,
+          targetReturnType: "amount",
+          targetDuration: "custom",
+          targetEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).getTime(),
+        },
+      ];
+
+      for (const portfolio of demoPortfolios) {
+        await firebaseService.addPortfolio({
+          ...portfolio,
+          createdAt: Date.now(),
+        });
+      }
+
+      setNotification({ type: 'success', message: 'Demo portofolio berhasil dibuat. Target akan dicek setelah transaksi.' });
+    } catch (error) {
+      console.error(error);
+      setNotification({ type: 'error', message: 'Gagal membuat demo data.' });
+    } finally {
+      setLoading(false);
+      setSyncStatus('synced');
+    }
+  };
+
   const confirmGenerateDummy = async () => {
     if (!user) return;
     setShowDummyModal(false); 
@@ -451,7 +521,56 @@ function AppContent() {
 
         await firebaseService.addTransaction(tData, user.uid);
       }
-      setNotification({ type: 'success', message: 'Data demo berhasil ditambahkan.' });
+
+      // Demo portfolios with targets
+      const demoPortfolios = [
+        {
+          name: "Saham BBCA",
+          currency: "IDR",
+          totalInvested: 10000000,
+          currentValue: 11500000,
+          targetReturn: 15000000,
+          targetReturnType: "amount",
+          targetDuration: "3_months",
+        },
+        {
+          name: "Kripto Bitcoin",
+          currency: "USD",
+          totalInvested: 5000,
+          currentValue: 6000,
+          targetReturn: 7000,
+          targetReturnType: "amount",
+          targetDuration: "6_months",
+        },
+        {
+          name: "Reksa Dana Equity",
+          currency: "IDR",
+          totalInvested: 50000000,
+          currentValue: 55000000,
+          targetReturn: 60000000,
+          targetReturnType: "percentage",
+          targetDuration: "3_months",
+        },
+        {
+          name: "Kripto Ethereum",
+          currency: "USD",
+          totalInvested: 3000,
+          currentValue: 3500,
+          targetReturn: 4000,
+          targetReturnType: "amount",
+          targetDuration: "custom",
+          targetEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).getTime(),
+        },
+      ];
+
+      for (const portfolio of demoPortfolios) {
+        await firebaseService.addPortfolio({
+          ...portfolio,
+          createdAt: Date.now(),
+        });
+      }
+
+      setNotification({ type: 'success', message: 'Data demo lengkap (transaksi + portofolio target) berhasil ditambahkan.' });
     } catch (error) {
       console.error(error);
       setNotification({ type: 'error', message: 'Gagal membuat demo data.' });
@@ -778,13 +897,25 @@ function AppContent() {
       if (!newPortfolioName || !user) return;
       setSyncStatus('saving');
       try {
-          await addPortfolio({
+          const data = {
               name: newPortfolioName,
-              currency: defaultCurrency,
+              currency: newPortfolioCurrency || defaultCurrency,
               totalInvested: 0,
-              currentValue: 0
-          });
+              currentValue: 0,
+              createdAt: Date.now(),
+              alertsTriggered: []
+          };
+
+          if (newPortfolioTargetValue) {
+            data.targetReturn = parseFloat(newPortfolioTargetValue);
+            data.targetReturnType = newPortfolioTargetType;
+            data.targetDuration = newPortfolioDuration;
+          }
+
+          await addPortfolio(data);
           setNewPortfolioName('');
+          setNewPortfolioTargetValue('');
+          setNewPortfolioDuration('3_months');
           setShowPortfolioModal(false);
           setNotification({ type: 'success', message: 'Portofolio investasi dibuat.' });
       } catch (error) { setSyncStatus('offline'); }
@@ -1004,6 +1135,7 @@ function AppContent() {
             sortBy={sortBy}
             setShowFilterSheet={setShowFilterSheet}
             setView={setView}
+            unreadCount={unreadCount}
           />
         )}
         

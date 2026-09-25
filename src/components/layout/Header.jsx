@@ -1,12 +1,12 @@
 import React from 'react';
-import { Sparkles, Eye, EyeOff, Search, SlidersHorizontal, RefreshCw, Cloud, CloudOff, User, X, Wallet, Briefcase } from 'lucide-react';
+import { Sparkles, Eye, EyeOff, Search, SlidersHorizontal, RefreshCw, Cloud, CloudOff, User, X, Wallet, Briefcase, Bell } from 'lucide-react';
 
 export default function Header({
   user, defaultCurrency, hideBalance, setHideBalance,
   totalNetWorthByCurrency, totalCashByCurrency, totalInvestmentsByCurrency,
   formatCurrency, syncStatus,
   isSearchOpen, setIsSearchOpen, searchQuery, setSearchQuery,
-  filterType, sortBy, setShowFilterSheet, setView
+  filterType, sortBy, setShowFilterSheet, setView, unreadCount
 }) {
   return (
     <div className="bg-gradient-to-b from-blue-700 to-indigo-800 px-5 pt-6 pb-6 text-white rounded-b-[2rem] lg:rounded-3xl shadow-lg mb-2 relative overflow-hidden transition-all duration-300">
@@ -29,6 +29,13 @@ export default function Header({
             <button onClick={() => setShowFilterSheet(true)} className="p-1.5 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-blue-100 relative">
               <SlidersHorizontal className="w-4 h-4" />
               {(filterType !== 'all' || sortBy !== 'date_desc') && <span className="absolute top-0 right-0 w-2 h-2 bg-rose-500 rounded-full border border-blue-800"></span>}
+            </button>
+
+            <button onClick={() => setView('notifications')} className="p-1.5 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-blue-100 relative">
+              <Bell className="w-4 h-4" />
+              {unreadCount > 0 && <span className="absolute -top-1 -right-1 inline-flex items-center justify-center h-4 w-4 bg-red-500 text-white rounded-full text-[10px] font-bold border border-blue-800">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>}
             </button>
 
             {syncStatus === 'saving' && <RefreshCw className="w-4 h-4 text-blue-200 animate-spin ml-1" />}
