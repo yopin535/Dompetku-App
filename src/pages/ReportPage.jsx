@@ -1,5 +1,6 @@
 import React from 'react';
 import { TrendingUp, TrendingDown, ChevronLeft, ChevronRight, PieChart, Sparkles, ChevronUp, ChevronDown } from 'lucide-react';
+import { CURRENCIES } from '../utils/formatters';
 
 export default function ReportPage({
   reportType, setReportType,
@@ -7,6 +8,8 @@ export default function ReportPage({
   changeReportPeriod, getReportTitle, formatCurrency, reportSummary, reportCurrency,
   transactions, defaultCurrency, categoryStats, expandedId, setExpandedId, reportTransactions
 }) {
+  const availableCurrencies = [...new Set([...CURRENCIES.map(c => c.code), ...transactions.map(t => t.currency || defaultCurrency)])];
+  
   return (
     <div className="animate-in fade-in duration-300">
       
@@ -56,8 +59,7 @@ export default function ReportPage({
         <div className="flex justify-between items-center mb-6">
             <h3 className="font-bold text-gray-800 flex items-center gap-2"><PieChart className="w-4 h-4 text-blue-600" /> Distribusi Pengeluaran</h3>
             <select value={reportCurrency} onChange={(e) => setReportCurrency(e.target.value)} className="bg-gray-50 text-xs font-bold text-blue-600 focus:outline-none border border-gray-200 rounded px-2 py-1">
-              {[...new Set(transactions.map(t => t.currency || defaultCurrency))].map(c => <option key={c} value={c}>{c}</option>)}
-              {transactions.length === 0 && <option value={defaultCurrency}>{defaultCurrency}</option>}
+              {availableCurrencies.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
         </div>
 
