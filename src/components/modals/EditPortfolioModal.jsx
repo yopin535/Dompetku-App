@@ -21,7 +21,8 @@ export default function EditPortfolioModal({ open, onClose, portfolio, onSave, o
     }
   }, [portfolio]);
 
-  if (!open || !portfolio) return null;
+  if (!open) return null;
+  if (!portfolio) return null;
 
   const handleSave = (e) => {
     e.preventDefault();

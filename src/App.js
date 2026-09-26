@@ -1241,7 +1241,7 @@ function AppContent() {
         />
         <EditPortfolioModal
           open={showEditPortfolioModal}
-          onClose={() => setShowEditPortfolioModal(false)}
+          onClose={() => { setShowEditPortfolioModal(false); setEditPortfolioModalData(null); }}
           portfolio={editPortfolioModalData}
           onSave={handleUpdatePortfolio}
           onDelete={handleDeletePortfolio}
@@ -1356,6 +1356,7 @@ function AppContent() {
                 setInvestActionType={setInvestActionType}
                 setShowInvestActionModal={setShowInvestActionModal}
                 setShowEditPortfolioModal={setShowEditPortfolioModal}
+                setEditPortfolioModalData={setEditPortfolioModalData}
                 onDeletePortfolio={handleDeletePortfolio}
               />
             </div>

@@ -4,7 +4,7 @@ import { LineChart, Briefcase, TrendingUp, TrendingDown, Plus, ArrowUpCircle, Ar
 export default function InvestasiPage({
   portfolios, hideBalance, formatCurrency, defaultCurrency,
   setShowPortfolioModal, setActivePortfolio, setInvestActionType, setShowInvestActionModal,
-  setShowEditPortfolioModal, onDeletePortfolio
+  setShowEditPortfolioModal, setEditPortfolioModalData, onDeletePortfolio
 }) {
   const [openMenuId, setOpenMenuId] = useState(null);
   // Multi-currency summary per currency
@@ -116,7 +116,7 @@ export default function InvestasiPage({
                     {openMenuId === p.id && (
                       <div className="absolute right-0 top-8 w-32 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1 animate-in fade-in zoom-in-95 duration-150">
                         <button 
-                          onClick={() => { setShowEditPortfolioModal(p); setOpenMenuId(null); }} 
+                          onClick={() => { setEditPortfolioModalData(p); setShowEditPortfolioModal(true); setOpenMenuId(null); }} 
                           className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                         >
                           <Edit2 className="w-3 h-3" /> Edit
