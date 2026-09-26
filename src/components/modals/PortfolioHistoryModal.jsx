@@ -8,7 +8,6 @@ export default function PortfolioHistoryModal({
 }) {
   const [filterPortfolioId, setFilterPortfolioId] = useState('all');
   const [filterReason, setFilterReason] = useState('all');
-  if (!open) return null;
 
   const filtered = useMemo(() => {
     return histories.filter(h => {
@@ -17,6 +16,8 @@ export default function PortfolioHistoryModal({
       return true;
     });
   }, [histories, filterPortfolioId, filterReason]);
+
+  if (!open) return null;
 
   const reasonLabel = (r) => {
     if (r === 'create') return 'Buat';
