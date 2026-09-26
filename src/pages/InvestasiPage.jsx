@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { LineChart, Briefcase, TrendingUp, TrendingDown, Plus, ArrowUpCircle, ArrowDownCircle, RefreshCw, Globe, Target, Calendar, MoreHorizontal } from 'lucide-react';
+import { LineChart, Briefcase, TrendingUp, TrendingDown, Plus, ArrowUpCircle, ArrowDownCircle, RefreshCw, Globe, Target, Calendar, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 
 export default function InvestasiPage({
   portfolios, hideBalance, formatCurrency, defaultCurrency,
-  setShowPortfolioModal, setActivePortfolio, setInvestActionType, setShowInvestActionModal
+  setShowPortfolioModal, setActivePortfolio, setInvestActionType, setShowInvestActionModal,
+  setShowEditPortfolioModal, onDeletePortfolio
 }) {
+  const [openMenuId, setOpenMenuId] = useState(null);
   // Multi-currency summary per currency
   const currencySummary = useMemo(() => {
     const result = {};
@@ -104,6 +106,30 @@ export default function InvestasiPage({
               <div key={p.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 relative overflow-hidden">
                 <div className="absolute top-3 right-3 flex items-center gap-1">
                   <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">{currency}</span>
+                  <div className="relative">
+                    <button 
+                      onClick={() => setOpenMenuId(openMenuId === p.id ? null : p.id)} 
+                      className="p-1 hover:bg-gray-100 rounded-full transition-colors text-gray-400"
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+                    {openMenuId === p.id && (
+                      <div className="absolute right-0 top-8 w-32 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1 animate-in fade-in zoom-in-95 duration-150">
+                        <button 
+                          onClick={() => { setShowEditPortfolioModal(p); setOpenMenuId(null); }} 
+                          className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                        >
+                          <Edit2 className="w-3 h-3" /> Edit
+                        </button>
+                        <button 
+                          onClick={() => { onDeletePortfolio(p.id); setOpenMenuId(null); }} 
+                          className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 flex items-center gap-2"
+                        >
+                          <Trash2 className="w-3 h-3" /> Hapus
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 
                 <div className="flex justify-between items-start mb-4">
