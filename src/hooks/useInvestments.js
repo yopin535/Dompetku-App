@@ -8,17 +8,21 @@ export function useInvestments() {
   const addPortfolio = useCallback(async (data) => {
     if (!user) return;
     const id = await firebaseService.addPortfolio(data);
-    await firebaseService.addPortfolioHistory({
-      portfolioId: id,
-      portfolioName: data.name,
-      currency: data.currency || 'IDR',
-      prevInvested: 0,
-      newInvested: 0,
-      prevValue: 0,
-      newValue: 0,
-      reason: 'create',
-      amount: 0
-    });
+    try {
+      await firebaseService.addPortfolioHistory({
+        portfolioId: id,
+        portfolioName: data.name,
+        currency: data.currency || 'IDR',
+        prevInvested: 0,
+        newInvested: 0,
+        prevValue: 0,
+        newValue: 0,
+        reason: 'create',
+        amount: 0
+      });
+    } catch (e) {
+      console.error('[history] create write failed:', e);
+    }
     return id;
   }, [user]);
 
@@ -134,17 +138,21 @@ export function useInvestments() {
     const newVal = (parseFloat(portfolio.currentValue) || 0) + amt;
     await firebaseService.updatePortfolio(portfolio.id, { totalInvested: newModal, currentValue: newVal });
 
-    await firebaseService.addPortfolioHistory({
-      portfolioId: portfolio.id,
-      portfolioName: portfolio.name,
-      currency: portfolio.currency || 'IDR',
-      prevInvested: parseFloat(portfolio.totalInvested) || 0,
-      newInvested: newModal,
-      prevValue: parseFloat(portfolio.currentValue) || 0,
-      newValue: newVal,
-      reason: 'topup',
-      amount: amt
-    });
+    try {
+      await firebaseService.addPortfolioHistory({
+        portfolioId: portfolio.id,
+        portfolioName: portfolio.name,
+        currency: portfolio.currency || 'IDR',
+        prevInvested: parseFloat(portfolio.totalInvested) || 0,
+        newInvested: newModal,
+        prevValue: parseFloat(portfolio.currentValue) || 0,
+        newValue: newVal,
+        reason: 'topup',
+        amount: amt
+      });
+    } catch (e) {
+      console.error('[history] topup write failed:', e);
+    }
     
     await checkTargets();
   }, [user, checkTargets]);
@@ -175,17 +183,21 @@ export function useInvestments() {
     const newVal = Math.max(0, (parseFloat(portfolio.currentValue) || 0) - amt);
     await firebaseService.updatePortfolio(portfolio.id, { totalInvested: newModal, currentValue: newVal });
 
-    await firebaseService.addPortfolioHistory({
-      portfolioId: portfolio.id,
-      portfolioName: portfolio.name,
-      currency: portfolio.currency || 'IDR',
-      prevInvested: parseFloat(portfolio.totalInvested) || 0,
-      newInvested: newModal,
-      prevValue: parseFloat(portfolio.currentValue) || 0,
-      newValue: newVal,
-      reason: 'withdraw',
-      amount: amt
-    });
+    try {
+      await firebaseService.addPortfolioHistory({
+        portfolioId: portfolio.id,
+        portfolioName: portfolio.name,
+        currency: portfolio.currency || 'IDR',
+        prevInvested: parseFloat(portfolio.totalInvested) || 0,
+        newInvested: newModal,
+        prevValue: parseFloat(portfolio.currentValue) || 0,
+        newValue: newVal,
+        reason: 'withdraw',
+        amount: amt
+      });
+    } catch (e) {
+      console.error('[history] withdraw write failed:', e);
+    }
   }, [user]);
 
   const processUpdateValue = useCallback(async (portfolio, newCurrentValue) => {

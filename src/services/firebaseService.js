@@ -329,10 +329,14 @@ export const firebaseService = {
     async addPortfolioHistory(data, userId) {
       try {
         const col = getCollectionRef('portfolio_history', userId);
-        const docRef = await addDoc(col, { ...data, at: data.at || Date.now() });
+        const docRef = await addDoc(col, {
+          ...data,
+          at: data.at || Date.now()
+        });
+        console.log('[history] wrote:', docRef.id, data.reason, data.portfolioName);
         return docRef.id;
       } catch (error) {
-        console.error('Error adding portfolio history:', error);
+        console.error('[history] WRITE FAILED:', error.message, data);
         throw error;
       }
     },
@@ -350,9 +354,10 @@ export const firebaseService = {
         let docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
         if (portfolioId) docs = docs.filter(h => h.portfolioId === portfolioId);
         docs.sort((a, b) => (b.at || 0) - (a.at || 0));
+        console.log('[history] read:', docs.length, 'entries');
         return docs;
       } catch (error) {
-        console.error('Error getting portfolio history:', error);
+        console.error('[history] READ FAILED:', error.message);
         throw error;
       }
     }
