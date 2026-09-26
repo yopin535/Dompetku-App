@@ -104,12 +104,12 @@ export default function InvestasiPage({
 
             return (
               <div key={p.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 relative overflow-hidden">
-                <div className="absolute top-3 right-3 flex items-center gap-1">
+                <div className="flex items-start justify-between mb-3">
                   <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">{currency}</span>
                   <div className="relative">
                     <button 
                       onClick={() => setOpenMenuId(openMenuId === p.id ? null : p.id)} 
-                      className="p-1 hover:bg-gray-100 rounded-full transition-colors text-gray-400"
+                      className="p-1.5 hover:bg-gray-100 rounded-full transition-colors text-gray-400"
                     >
                       <MoreVertical className="w-4 h-4" />
                     </button>
