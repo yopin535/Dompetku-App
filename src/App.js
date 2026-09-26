@@ -1652,36 +1652,37 @@ function AppContent() {
           onDelete={handleDeleteCategory}
         />
         <div className="px-4 md:px-0">
-          {view === 'home' && (loading && transactions.length === 0 ? <SkeletonHome /> : (
-            <HomePage
-              wallets={wallets}
-              walletBalances={walletBalances}
-              hideBalance={hideBalance}
-              formatCurrency={formatCurrency}
-              onAddWallet={() => setShowWalletModal(true)}
-              isScanning={isScanning} uploadStatus={uploadStatus} editId={editId} type={type} setType={setType}
-              receiptInputRef={receiptInputRef} handleScanReceipt={handleScanReceipt} handleAddTransaction={handleAddTransaction}
-              walletId={walletId} setWalletId={setWalletId} toWalletId={toWalletId} setToWalletId={setToWalletId}
-              amount={amount} setAmount={setAmount} receivedAmount={receivedAmount} setReceivedAmount={setReceivedAmount} adminFee={adminFee} setAdminFee={setAdminFee}
-              date={date} setDate={setDate} debtType={debtType} setDebtType={setDebtType} personName={personName} setPersonName={setPersonName} dueDate={dueDate} setDueDate={setDueDate}
-              description={description} setDescription={setDescription} receiptImageUrl={receiptImageUrl} setReceiptImageUrl={setReceiptImageUrl} setPreviewImage={setPreviewImage}
-              items={items} handleAddItem={handleAddItem} handleItemChange={handleItemChange} handleRemoveItem={handleRemoveItem} handleOpenItemCatModal={handleOpenItemCatModal}
-              selectedCategories={selectedCategories} expenseCategories={expenseCategories} incomeCategories={incomeCategories} toggleCategory={toggleCategory} getLabelClass={getLabelClass} setShowCatModal={setShowCatModal}
-              cancelEdit={cancelEdit} user={user} loading={loading} defaultCurrency={defaultCurrency}
-              groupedHomeTransactions={groupedHomeTransactions}
-              homeTransactionsCount={homeTransactionsCount}
-              homeViewDate={homeViewDate}
-              changeHomeMonth={changeHomeMonth}
-              searchQuery={searchQuery}
-              filterType={filterType}
-              sortBy={sortBy}
-              isFlatList={isFlatList}
-              expandedId={expandedId}
-              onToggleExpand={toggleExpand}
-              onEdit={handleEditClick}
-              onDelete={handleDelete}
-            />
-          ))}
+{view === 'home' && (loading && transactions.length === 0 ? <SkeletonHome /> : (
+             <HomePage
+               wallets={wallets}
+               walletBalances={walletBalances}
+               hideBalance={hideBalance}
+               formatCurrency={formatCurrency}
+               totalNetWorthByCurrency={totalNetWorthByCurrency}
+               onAddWallet={() => setShowWalletModal(true)}
+               isScanning={isScanning} uploadStatus={uploadStatus} editId={editId} type={type} setType={setType}
+               receiptInputRef={receiptInputRef} handleScanReceipt={handleScanReceipt} handleAddTransaction={handleAddTransaction}
+               walletId={walletId} setWalletId={setWalletId} toWalletId={toWalletId} setToWalletId={setToWalletId}
+               amount={amount} setAmount={setAmount} receivedAmount={receivedAmount} setReceivedAmount={setReceivedAmount} adminFee={adminFee} setAdminFee={setAdminFee}
+               date={date} setDate={setDate} debtType={debtType} setDebtType={setDebtType} personName={personName} setPersonName={setPersonName} dueDate={dueDate} setDueDate={setDueDate}
+               description={description} setDescription={setDescription} receiptImageUrl={receiptImageUrl} setReceiptImageUrl={setReceiptImageUrl} setPreviewImage={setPreviewImage}
+               items={items} handleAddItem={handleAddItem} handleItemChange={handleItemChange} handleRemoveItem={handleRemoveItem} handleOpenItemCatModal={handleOpenItemCatModal}
+               selectedCategories={selectedCategories} expenseCategories={expenseCategories} incomeCategories={incomeCategories} toggleCategory={toggleCategory} getLabelClass={getLabelClass} setShowCatModal={setShowCatModal}
+               cancelEdit={cancelEdit} user={user} loading={loading} defaultCurrency={defaultCurrency}
+               groupedHomeTransactions={groupedHomeTransactions}
+               homeTransactionsCount={homeTransactionsCount}
+               homeViewDate={homeViewDate}
+               changeHomeMonth={changeHomeMonth}
+               searchQuery={searchQuery}
+               filterType={filterType}
+               sortBy={sortBy}
+               isFlatList={isFlatList}
+               expandedId={expandedId}
+               onToggleExpand={toggleExpand}
+               onEdit={handleEditClick}
+               onDelete={handleDelete}
+             />
+           ))}
           {view === 'report' && (
             <div className="mt-4">
               <ReportPage

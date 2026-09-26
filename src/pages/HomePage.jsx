@@ -12,6 +12,7 @@ export default function HomePage(props) {
         hideBalance={props.hideBalance}
         formatCurrency={props.formatCurrency}
         onAdd={props.onAddWallet}
+        totalNetWorthByCurrency={props.totalNetWorthByCurrency}
       />
 
       <div className="lg:grid lg:grid-cols-5 lg:gap-6 lg:items-start">
