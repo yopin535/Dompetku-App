@@ -5,7 +5,7 @@ export default function InvestasiPage({
   portfolios, hideBalance, formatCurrency, defaultCurrency,
   setShowPortfolioModal, setActivePortfolio, setInvestActionType, setShowInvestActionModal,
   setShowEditPortfolioModal, setEditPortfolioModalData, onDeletePortfolio,
-  setShowHistoryModal
+  onOpenHistoryModal
 }) {
   const [openMenuId, setOpenMenuId] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, portfolio: null, backupFirst: false });
@@ -79,7 +79,7 @@ export default function InvestasiPage({
       <div className="flex justify-between items-center mb-4 px-1">
         <h3 className="font-bold text-gray-800 text-sm">Daftar Portofolio</h3>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowHistoryModal(true)} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors text-gray-500 hover:text-gray-700" aria-label="Riwayat">
+          <button onClick={onOpenHistoryModal} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors text-gray-500 hover:text-gray-700" aria-label="Riwayat">
             <History className="w-5 h-5" />
           </button>
           <button onClick={() => setShowPortfolioModal(true)} className="text-[10px] font-bold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-full hover:bg-purple-100 transition-colors flex items-center gap-1"><Plus className="w-3 h-3"/> Tambah Baru</button>

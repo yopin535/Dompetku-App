@@ -1274,10 +1274,12 @@ function AppContent() {
     setHistoryLoading(true);
     try {
       const data = await firebaseService.getPortfolioHistory(user.uid);
+      console.log('[history] read:', data.length, 'entries');
       setHistories(data);
+      setNotification({ type: 'success', message: `Riwayat dimuat: ${data.length} entri` });
     } catch (e) {
       console.error(e);
-      setNotification({ type: 'error', message: 'Gagal memuat riwayat.' });
+      setNotification({ type: 'error', message: 'Gagal memuat riwayat: ' + e.message });
     } finally {
       setHistoryLoading(false);
     }
@@ -1717,7 +1719,7 @@ function AppContent() {
                 setShowInvestActionModal={setShowInvestActionModal}
                 setShowEditPortfolioModal={setShowEditPortfolioModal}
                 setEditPortfolioModalData={setEditPortfolioModalData}
-                setShowHistoryModal={setShowHistoryModal}
+                onOpenHistoryModal={openHistoryModal}
                 onDeletePortfolio={handleDeletePortfolio}
               />
             </div>
