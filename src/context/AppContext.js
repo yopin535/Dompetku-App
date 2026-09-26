@@ -58,6 +58,10 @@ export function AppProvider({ children }) {
   const [investAmount, setInvestAmount] = useState('');
   const [showEditPortfolioModal, setShowEditPortfolioModal] = useState(false);
   const [editPortfolioModalData, setEditPortfolioModalData] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [histories, setHistories] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const [reportWalletId, setReportWalletId] = useState('all');
 
@@ -151,6 +155,10 @@ export function AppProvider({ children }) {
         investAmount, setInvestAmount,
         showEditPortfolioModal, setShowEditPortfolioModal,
         editPortfolioModalData, setEditPortfolioModalData,
+        importPreview, setImportPreview,
+        showHistoryModal, setShowHistoryModal,
+        histories, setHistories,
+        historyLoading, setHistoryLoading,
         type, setType,
         description, setDescription,
         amount, setAmount,

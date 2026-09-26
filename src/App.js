@@ -48,11 +48,12 @@ import { useCategories } from './hooks/useCategories';
 import { useInvestments } from './hooks/useInvestments';
 import { useNotifications } from './hooks/useNotifications';
 import EditPortfolioModal from './components/modals/EditPortfolioModal';
+import PortfolioHistoryModal from './components/modals/PortfolioHistoryModal';
 
 function AppContent() {
   const { view, setView, loading, setLoading, notification, setNotification, syncStatus, setSyncStatus, user, setUser, transactions, setTransactions, customCategories, setCustomCategories, wallets, setWallets, portfolios, setPortfolios, notifications, setNotifications, unreadCount, setUnreadCount, showPortfolioModal, setShowPortfolioModal, newPortfolioName, setNewPortfolioName, showInvestActionModal, setShowInvestActionModal, investActionType, setInvestActionType, activePortfolio, setActivePortfolio, investAmount, setInvestAmount, reportWalletId, setReportWalletId } = useApp();
   
-  const { defaultCurrency, setDefaultCurrency, geminiKey, setGeminiKey, gasUrl, setGasUrl, hideBalance, setHideBalance, showFloatingAdd, setShowFloatingAdd, showCatModal, setShowCatModal, showResetModal, setShowResetModal, showWalletModal, setShowWalletModal, showDummyModal, setShowDummyModal, showItemCatModal, setShowItemCatModal, activeItemIndex, setActiveItemIndex, newCatName, setNewCatName, previewImage, setPreviewImage, showDebtModal, setShowDebtModal, activeDebtTab, setActiveDebtTab, searchQuery, setSearchQuery, isSearchOpen, setIsSearchOpen, showFilterSheet, setShowFilterSheet, filterType, setFilterType, sortBy, setSortBy, showInstallmentModal, setShowInstallmentModal, selectedDebt, setSelectedDebt, installmentAmount, setInstallmentAmount, installmentDate, setInstallmentDate, installmentWalletId, setInstallmentWalletId, newPortfolioCurrency, setNewPortfolioCurrency, newPortfolioTargetType, setNewPortfolioTargetType, newPortfolioTargetValue, setNewPortfolioTargetValue, newPortfolioDuration, setNewPortfolioDuration, newPortfolioCustomDate, setNewPortfolioCustomDate, showEditPortfolioModal, setShowEditPortfolioModal, editPortfolioModalData, setEditPortfolioModalData } = useApp();
+  const { defaultCurrency, setDefaultCurrency, geminiKey, setGeminiKey, gasUrl, setGasUrl, hideBalance, setHideBalance, showFloatingAdd, setShowFloatingAdd, showCatModal, setShowCatModal, showResetModal, setShowResetModal, showWalletModal, setShowWalletModal, showDummyModal, setShowDummyModal, showItemCatModal, setShowItemCatModal, activeItemIndex, setActiveItemIndex, newCatName, setNewCatName, previewImage, setPreviewImage, showDebtModal, setShowDebtModal, activeDebtTab, setActiveDebtTab, searchQuery, setSearchQuery, isSearchOpen, setIsSearchOpen, showFilterSheet, setShowFilterSheet, filterType, setFilterType, sortBy, setSortBy, showInstallmentModal, setShowInstallmentModal, selectedDebt, setSelectedDebt, installmentAmount, setInstallmentAmount, installmentDate, setInstallmentDate, installmentWalletId, setInstallmentWalletId, newPortfolioCurrency, setNewPortfolioCurrency, newPortfolioTargetType, setNewPortfolioTargetType, newPortfolioTargetValue, setNewPortfolioTargetValue, newPortfolioDuration, setNewPortfolioDuration, newPortfolioCustomDate, setNewPortfolioCustomDate, showEditPortfolioModal, setShowEditPortfolioModal, editPortfolioModalData, setEditPortfolioModalData, showHistoryModal, setShowHistoryModal, histories, setHistories, historyLoading, setHistoryLoading } = useApp();
 
   const { type, setType, description, setDescription, amount, setAmount, currency, setCurrency, date, setDate, selectedCategories, setSelectedCategories, items, setItems, receiptImageUrl, setReceiptImageUrl, walletId, setWalletId, toWalletId, setToWalletId, receivedAmount, setReceivedAmount, adminFee, setAdminFee, debtType, setDebtType, personName, setPersonName, dueDate, setDueDate, newWalletName, setNewWalletName, newWalletCurrency, setNewWalletCurrency, newWalletBalance, setNewWalletBalance, editId, setEditId, homeViewDate, setHomeViewDate, expandedId, setExpandedId, reportDate, setReportDate, reportType, setReportType, reportCurrency, setReportCurrency, isScanning, setIsScanning, uploadStatus, setUploadStatus } = useApp();
   const fileInputRef = useRef(null);
@@ -225,13 +226,21 @@ function AppContent() {
   };
 
   const downloadCSV = () => {
-    if (transactions.length === 0) { 
+    if (transactions.length === 0 && portfolios.length === 0) { 
       setNotification({ type: 'error', message: 'Tidak ada data untuk diekspor.' }); 
       return; 
     }
     
-    const headers = "id,iso_date,tanggal_display,deskripsi,kategori,tipe,mata_uang,jumlah,dompet_asal,dompet_tujuan,biaya_admin,rincian_item,url_struk,debtType,personName,dueDate,status,paidAmount,isSettlement,settledDebtId";
-    const csvRows = [headers];
+    // Build wallet name lookup
+    const walletNames = {};
+    wallets.forEach(w => { walletNames[w.id] = w.name; });
+    
+    let csvContent = '';
+    
+    // ===== TRANSACTIONS SECTION =====
+    csvContent += '##TRANSACTIONS\n';
+    const transHeaders = "id,iso_date,tanggal_display,deskripsi,kategori,tipe,mata_uang,jumlah,dompet_asal,dompet_tujuan,biaya_admin,rincian_item,url_struk,debtType,personName,dueDate,status,paidAmount,isSettlement,settledDebtId";
+    let csvRows = [transHeaders];
     
     transactions.forEach(t => {
       const dateObj = new Date(t.transactionDate || t.createdAt || Date.now());
@@ -247,6 +256,9 @@ function AppContent() {
           }).join("||");
       }
       
+      const walletName = walletNames[t.walletId] || '';
+      const toWalletName = walletNames[t.toWalletId] || '';
+      
       const row = [
           t.id || '',
           isoDate,
@@ -256,8 +268,8 @@ function AppContent() {
           t.type || '',
           (t.currency || 'IDR'),
           t.amount || 0,
-          (t.walletId || ''),
-          (t.toWalletId || ''),
+          `"${walletName}"`,
+          `"${toWalletName}"`,
           (t.adminFee || 0),
           `"${itemsString}"`,
           `"${(t.receiptUrl || '')}"`,
@@ -271,8 +283,33 @@ function AppContent() {
       ].join(",");
       csvRows.push(row);
     });
+    csvContent += csvRows.join('\n') + '\n\n';
     
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    // ===== PORTFOLIOS SECTION =====
+    csvContent += '##PORTFOLIOS\n';
+    const portHeaders = "id,name,currency,totalInvested,currentValue,targetReturn,targetReturnType,targetDuration,targetEndDate,createdAt,alertsTriggered";
+    let portRows = [portHeaders];
+    
+    portfolios.forEach(p => {
+      const alertsStr = Array.isArray(p.alertsTriggered) ? p.alertsTriggered.join(';') : '';
+      const row = [
+        p.id || '',
+        `"${p.name || ''}"`,
+        p.currency || 'IDR',
+        p.totalInvested || 0,
+        p.currentValue || 0,
+        p.targetReturn || '',
+        p.targetReturnType || 'amount',
+        p.targetDuration || '3_months',
+        p.targetEndDate || '',
+        p.createdAt || '',
+        `"${alertsStr}"`
+      ].join(",");
+      portRows.push(row);
+    });
+    csvContent += portRows.join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -290,13 +327,52 @@ function AppContent() {
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
-        const rows = event.target.result.split('\n');
-        let importedCount = 0;
-        setLoading(true); 
-        setSyncStatus('saving');
+        const rawContent = event.target.result;
         
-        for (let i = 1; i < rows.length; i++) {
-          const rowText = rows[i].trim();
+        // Detect new format (has ##TRANSACTIONS) vs old format
+        const hasSections = rawContent.includes('##TRANSACTIONS') || rawContent.includes('##PORTFOLIOS');
+        let transSection = '';
+        let portSection = '';
+        
+        if (hasSections) {
+          const transMarker = rawContent.indexOf('##TRANSACTIONS');
+          const portMarker = rawContent.indexOf('##PORTFOLIOS');
+          if (transMarker >= 0) {
+            const transEnd = portMarker >= 0 ? portMarker : rawContent.length;
+            transSection = rawContent.substring(transMarker + '##TRANSACTIONS'.length, transEnd).trim();
+          }
+          if (portMarker >= 0) {
+            portSection = rawContent.substring(portMarker + '##PORTFOLIOS'.length).trim();
+          }
+        } else {
+          // Old format: entire content is transactions
+          transSection = rawContent;
+        }
+        
+        // Parse transactions rows
+        const transRows = transSection.split('\n').filter(r => r.trim());
+        let transHeaders = '';
+        let dataRows = [];
+        if (transRows.length > 0) {
+          transHeaders = transRows[0].trim();
+          dataRows = transRows.slice(1);
+        }
+        
+        // Build dedup sets
+        const existingIds = new Set(transactions.map(t => t.id));
+        const existingPortIds = new Set(portfolios.map(p => p.id));
+        const existingPortKeys = new Set(portfolios.map(p => `${p.name}|${p.currency || 'IDR'}`));
+        const fingerprintSet = new Set(transactions.map(t => {
+          const d = new Date(t.transactionDate || t.createdAt || 0).toISOString().split('T')[0];
+          return `${d}|${t.amount}|${t.type}|${t.description}`;
+        }));
+        
+        // Determine wallet mapping needs
+        const parsedTransData = [];
+        const neededWalletNames = new Set();
+        
+        for (let i = 0; i < dataRows.length; i++) {
+          const rowText = dataRows[i].trim();
           if (!rowText) continue;
           
           const cols = []; 
@@ -322,6 +398,7 @@ function AppContent() {
             const hasIdCol = cols[0].length > 15;
             const offset = hasIdCol ? 1 : 0;
 
+            const rawId = clean(cols[0]);
             const isoDate = clean(cols[offset]);
             const description = clean(cols[offset+2]);
             const categoryRaw = clean(cols[offset+3]);
@@ -331,8 +408,8 @@ function AppContent() {
 
             let curr = 'IDR'; 
             let amt = 0; 
-            let wId = wallets[0]?.id || ''; 
-            let toWId = ''; 
+            let walletName = ''; 
+            let toWalletName = '';
             let aFee = 0; 
             let parsedItems = []; 
             let recUrl = null;
@@ -341,8 +418,8 @@ function AppContent() {
             if (cols.length >= offset + 6) {
                 curr = clean(cols[offset+5]); 
                 amt = parseFloat(clean(cols[offset+6]));
-                wId = clean(cols[offset+7]) || wId;
-                toWId = clean(cols[offset+8]);
+                walletName = clean(cols[offset+7]);
+                toWalletName = clean(cols[offset+8]);
                 aFee = parseFloat(clean(cols[offset+9]) || 0);
                 const itemsRaw = clean(cols[offset+10]);
                 if (itemsRaw) parsedItems = itemsRaw.split('||').map(itemStr => { 
@@ -361,24 +438,105 @@ function AppContent() {
             }
             
             if (isoDate && description && !isNaN(amt)) {
-              const dateObj = new Date(isoDate);
-              await firebaseService.addTransaction({
-                description, amount: amt, type,
-                categories: catsArray.length > 0 ? catsArray : ['Umum'],
-                category: catsArray[0] || 'Umum',
-                currency: curr, walletId: wId, toWalletId: toWId, adminFee: aFee, items: parsedItems,
-                receiptUrl: recUrl,
-                debtType: debtT, personName: pName, dueDate: dDate, status: st, paidAmount: pAmt,
-                isSettlement: isSet, settledDebtId: setDId,
-                date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
-                transactionDate: dateObj.getTime(), createdAt: Date.now()
-              }, user.uid);
-              importedCount++;
+              const isDuplicateId = rawId && existingIds.has(rawId);
+              const fingerprint = `${isoDate}|${amt}|${type}|${description}`;
+              const isDuplicateFp = fingerprintSet.has(fingerprint);
+              const walletExists = walletName && wallets.some(w => w.name === walletName);
+              const toWalletExists = !toWalletName || wallets.some(w => w.name === toWalletName);
+              
+              if (walletName && !walletExists) neededWalletNames.add(walletName);
+              if (toWalletName && !toWalletExists) neededWalletNames.add(toWalletName);
+              
+              parsedTransData.push({
+                rawId, isoDate, description, catsArray, type, curr, amt, walletName, toWalletName, 
+                aFee, parsedItems, recUrl, debtT, pName, dDate, st, pAmt, isSet, setDId,
+                isDuplicateId, isDuplicateFp, isDuplicate: isDuplicateId || isDuplicateFp
+              });
             }
           }
         }
-        setLoading(false); 
-        setNotification({ type: 'success', message: `Berhasil mengimpor ${importedCount} transaksi.` });
+        
+        // Parse portfolios section
+        const parsedPortData = [];
+        if (portSection) {
+          const portRows = portSection.split('\n').filter(r => r.trim());
+          if (portRows.length > 1) {
+            for (let i = 1; i < portRows.length; i++) {
+              const rowText = portRows[i].trim();
+              if (!rowText) continue;
+              
+              const cols = []; 
+              let cur = ''; 
+              let inQuote = false;
+              for (let j = 0; j < rowText.length; j++) {
+                  const char = rowText[j];
+                  if (char === '"' && rowText[j+1] === '"') { cur += '""'; j++; } 
+                  else if (char === '"') { inQuote = !inQuote; } 
+                  else if (char === ',' && !inQuote) { cols.push(cur); cur = ''; } 
+                  else { cur += char; }
+              }
+              cols.push(cur);
+              
+              if (cols && cols.length >= 2) {
+                const clean = (str) => {
+                    if(!str) return '';
+                    let s = str.trim();
+                    if(s.startsWith('"') && s.endsWith('"')) s = s.substring(1, s.length - 1);
+                    return s.split('""').join('"');
+                };
+                const portId = clean(cols[0]);
+                const portName = clean(cols[1]);
+                const portCurrency = clean(cols[2]) || 'IDR';
+                const portKey = `${portName}|${portCurrency}`;
+                parsedPortData.push({
+                  id: portId,
+                  name: portName,
+                  currency: portCurrency,
+                  totalInvested: parseFloat(clean(cols[3])) || 0,
+                  currentValue: parseFloat(clean(cols[4])) || 0,
+                  targetReturn: clean(cols[5]) ? parseFloat(clean(cols[5])) : null,
+                  targetReturnType: clean(cols[6]) || 'amount',
+                  targetDuration: clean(cols[7]) || '3_months',
+                  targetEndDate: clean(cols[8]) ? parseInt(clean(cols[8])) || null : null,
+                  createdAt: clean(cols[9]) ? parseInt(clean(cols[9])) || Date.now() : Date.now(),
+                  alertsTriggered: clean(cols[10]) ? clean(cols[10]).split(';').filter(Boolean) : [],
+                  isDuplicateId: portId && existingPortIds.has(portId),
+                  isDuplicateKey: existingPortKeys.has(portKey),
+                  isDuplicate: (portId && existingPortIds.has(portId)) || existingPortKeys.has(portKey)
+                });
+              }
+            }
+          }
+        }
+        
+        // Build summary
+        const transNew = parsedTransData.filter(d => !d.isDuplicate).length;
+        const transDup = parsedTransData.filter(d => d.isDuplicate).length;
+        const portNew = parsedPortData.filter(d => !d.isDuplicate).length;
+        const portDup = parsedPortData.filter(d => d.isDuplicate).length;
+        const totalNew = transNew + portNew;
+        const totalDup = transDup + portDup;
+        const missingWallets = [...neededWalletNames];
+        
+        if (parsedTransData.length === 0 && parsedPortData.length === 0) {
+          setNotification({ type: 'error', message: 'Tidak ada data valid di file CSV.' });
+          e.target.value = null;
+          return;
+        }
+        
+        // Store parsed data for confirmation
+        const walletMapping = {};
+        missingWallets.forEach(name => {
+          walletMapping[name] = wallets[0]?.id || '';
+        });
+        
+        // Show confirmation modal state
+        setImportPreview({
+          open: true,
+          parsedTransData, parsedPortData, missingWallets, walletMapping,
+          transNew, transDup, portNew, portDup, totalNew, totalDup,
+          overwriteDup: false, skipDup: true
+        });
         e.target.value = null;
       } catch (error) {
         console.error(error);
@@ -389,6 +547,162 @@ function AppContent() {
       }
     };
     reader.readAsText(file);
+  };
+
+  const executeImport = async () => {
+    if (!importPreview || !user) return;
+    
+    const { parsedTransData, parsedPortData, walletMapping, skipDup, overwriteDup } = importPreview;
+    
+    // Validate wallet mapping
+    for (const [walletName, mappedId] of Object.entries(walletMapping)) {
+      if (!mappedId || !wallets.some(w => w.id === mappedId)) {
+        setNotification({ type: 'error', message: `Dompet "${walletName}" belum dipetakan. Pilih dompet tujuan.` });
+        return;
+      }
+    }
+    
+    setLoading(true); 
+    setSyncStatus('saving');
+    
+    try {
+      let importedCount = 0;
+      let updatedCount = 0;
+      let skippedCount = 0;
+      
+      // Build wallet name -> id lookup (include mappings)
+      const walletNameToId = {};
+      wallets.forEach(w => { walletNameToId[w.name] = w.id; });
+      Object.entries(walletMapping).forEach(([name, id]) => {
+        if (id) walletNameToId[name] = id;
+      });
+      
+      // Create dedup sets for within-file duplicates
+      const seenFingerprints = new Set(transactions.map(t => {
+        const d = new Date(t.transactionDate || t.createdAt || 0).toISOString().split('T')[0];
+        return `${d}|${t.amount}|${t.type}|${t.description}`;
+      }));
+      
+      for (const item of parsedTransData) {
+        const fingerprint = `${item.isoDate}|${item.amt}|${item.type}|${item.description}`;
+        const isDup = item.isDuplicate || seenFingerprints.has(fingerprint);
+        
+        if (isDup) {
+          if (skipDup) {
+            skippedCount++;
+            continue;
+          }
+          if (!overwriteDup) {
+            skippedCount++;
+            continue;
+          }
+        }
+        
+        // Within-file dedup
+        if (seenFingerprints.has(fingerprint) && !item.isDuplicate) {
+          skippedCount++;
+          continue;
+        }
+        seenFingerprints.add(fingerprint);
+        
+        const dateObj = new Date(item.isoDate);
+        const wId = walletNameToId[item.walletName] || wallets[0]?.id || '';
+        const toWId = item.toWalletName ? (walletNameToId[item.toWalletName] || '') : '';
+        
+        // If duplicate by ID and overwrite mode, update instead of add
+        if (item.isDuplicateId && overwriteDup && item.rawId) {
+          const existingTrans = transactions.find(t => t.id === item.rawId);
+          if (existingTrans) {
+            await firebaseService.updateTransaction(item.rawId, {
+              description: item.description, amount: item.amt, type: item.type,
+              categories: item.catsArray.length > 0 ? item.catsArray : ['Umum'],
+              category: item.catsArray[0] || 'Umum',
+              currency: item.curr, walletId: wId, toWalletId: toWId, adminFee: item.aFee, items: item.parsedItems,
+              receiptUrl: item.recUrl,
+              debtType: item.debtT, personName: item.pName, dueDate: item.dDate, status: item.st, paidAmount: item.pAmt,
+              isSettlement: item.isSet, settledDebtId: item.setDId,
+              date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+              transactionDate: dateObj.getTime()
+            }, user.uid);
+            updatedCount++;
+            continue;
+          }
+        }
+        
+        await firebaseService.addTransaction({
+          description: item.description, amount: item.amt, type: item.type,
+          categories: item.catsArray.length > 0 ? item.catsArray : ['Umum'],
+          category: item.catsArray[0] || 'Umum',
+          currency: item.curr, walletId: wId, toWalletId: toWId, adminFee: item.aFee, items: item.parsedItems,
+          receiptUrl: item.recUrl,
+          debtType: item.debtT, personName: item.pName, dueDate: item.dDate, status: item.st, paidAmount: item.pAmt,
+          isSettlement: item.isSet, settledDebtId: item.setDId,
+          date: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+          transactionDate: dateObj.getTime(), createdAt: Date.now()
+        }, user.uid);
+        importedCount++;
+      }
+      
+      // Import portfolios
+      const existingPortMap = new Map(portfolios.map(p => [`${p.name}|${p.currency || 'IDR'}`, p]));
+      for (const port of parsedPortData) {
+        const portKey = `${port.name}|${port.currency}`;
+        const existingPort = existingPortMap.get(portKey);
+        
+        if (port.isDuplicate) {
+          if (skipDup && !overwriteDup) {
+            skippedCount++;
+            continue;
+          }
+          if (overwriteDup && existingPort) {
+            await firebaseService.updatePortfolio(existingPort.id, {
+              totalInvested: port.totalInvested,
+              currentValue: port.currentValue,
+              targetReturn: port.targetReturn,
+              targetReturnType: port.targetReturnType,
+              targetDuration: port.targetDuration,
+              targetEndDate: port.targetEndDate,
+              alertsTriggered: port.alertsTriggered
+            });
+            updatedCount++;
+            continue;
+          }
+          if (skipDup) {
+            skippedCount++;
+            continue;
+          }
+        }
+        
+        await firebaseService.addPortfolio({
+          name: port.name,
+          currency: port.currency,
+          totalInvested: port.totalInvested,
+          currentValue: port.currentValue,
+          targetReturn: port.targetReturn,
+          targetReturnType: port.targetReturnType,
+          targetDuration: port.targetDuration,
+          targetEndDate: port.targetEndDate,
+          alertsTriggered: port.alertsTriggered || [],
+          createdAt: port.createdAt || Date.now()
+        });
+        importedCount++;
+      }
+      
+      setImportPreview({ open: false, parsedTransData: [], parsedPortData: [], missingWallets: [], walletMapping: {}, transNew: 0, transDup: 0, portNew: 0, portDup: 0, totalNew: 0, totalDup: 0, overwriteDup: false, skipDup: true });
+      setLoading(false);
+      
+      let msg = `Berhasil: ${importedCount} baru`;
+      if (updatedCount > 0) msg += `, ${updatedCount} diperbarui`;
+      if (skippedCount > 0) msg += `, ${skippedCount} dilewati`;
+      msg += '.';
+      setNotification({ type: 'success', message: msg });
+    } catch (error) {
+      console.error(error);
+      setLoading(false);
+      setNotification({ type: 'error', message: 'Gagal mengimpor sebagian data.' });
+    } finally {
+      setSyncStatus('synced');
+    }
   };
 
   const handleResetData = async () => {
@@ -954,6 +1268,21 @@ function AppContent() {
     }
   };
 
+  const openHistoryModal = async () => {
+    if (!user) return;
+    setHistoryLoading(true);
+    try {
+      const data = await firebaseService.getPortfolioHistory(user.uid);
+      setHistories(data);
+    } catch (e) {
+      console.error(e);
+      setNotification({ type: 'error', message: 'Gagal memuat riwayat.' });
+    } finally {
+      setHistoryLoading(false);
+    }
+    setShowHistoryModal(true);
+  };
+
   const processInvestAction = async () => {
       if (!user || !activePortfolio) return;
 
@@ -1246,6 +1575,36 @@ function AppContent() {
           onSave={handleUpdatePortfolio}
           onDelete={handleDeletePortfolio}
         />
+        <PortfolioHistoryModal
+          open={showHistoryModal}
+          onClose={() => setShowHistoryModal(false)}
+          portfolios={portfolios}
+          histories={histories}
+          historyLoading={historyLoading}
+          formatCurrency={formatCurrency}
+        />
+        <ImportPreviewModal
+          open={importPreview?.open}
+          onClose={() => setImportPreview(null)}
+          parsedTransData={importPreview?.parsedTransData || []}
+          parsedPortData={importPreview?.parsedPortData || []}
+          missingWallets={importPreview?.missingWallets || []}
+          walletMapping={importPreview?.walletMapping || {}}
+          transNew={importPreview?.transNew || 0}
+          transDup={importPreview?.transDup || 0}
+          portNew={importPreview?.portNew || 0}
+          portDup={importPreview?.portDup || 0}
+          totalNew={importPreview?.totalNew || 0}
+          totalDup={importPreview?.totalDup || 0}
+          overwriteDup={importPreview?.overwriteDup || false}
+          setOverwriteDup={(v) => setImportPreview(prev => ({ ...prev, overwriteDup: v }))}
+          skipDup={importPreview?.skipDup !== false}
+          setSkipDup={(v) => setImportPreview(prev => ({ ...prev, skipDup: v }))}
+          wallets={wallets}
+          setWalletMapping={(m) => setImportPreview(prev => ({ ...prev, walletMapping: typeof m === 'function' ? m(prev.walletMapping) : m }))}
+          onConfirm={executeImport}
+          onCancel={() => setImportPreview(null)}
+        />
         <InvestActionModal
           open={showInvestActionModal}
           onClose={() => setShowInvestActionModal(false)}
@@ -1357,6 +1716,7 @@ function AppContent() {
                 setShowInvestActionModal={setShowInvestActionModal}
                 setShowEditPortfolioModal={setShowEditPortfolioModal}
                 setEditPortfolioModalData={setEditPortfolioModalData}
+                setShowHistoryModal={setShowHistoryModal}
                 onDeletePortfolio={handleDeletePortfolio}
               />
             </div>

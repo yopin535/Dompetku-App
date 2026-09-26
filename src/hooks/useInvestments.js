@@ -7,7 +7,19 @@ export function useInvestments() {
 
   const addPortfolio = useCallback(async (data) => {
     if (!user) return;
-    return await firebaseService.addPortfolio(data);
+    const id = await firebaseService.addPortfolio(data);
+    await firebaseService.addPortfolioHistory({
+      portfolioId: id,
+      portfolioName: data.name,
+      currency: data.currency || 'IDR',
+      prevInvested: 0,
+      newInvested: 0,
+      prevValue: 0,
+      newValue: 0,
+      reason: 'create',
+      amount: 0
+    });
+    return id;
   }, [user]);
 
   const updatePortfolio = useCallback(async (id, data) => {
@@ -23,6 +35,21 @@ export function useInvestments() {
       category,
       isRead: false
     }, user.uid);
+  }, [user]);
+
+  const writeHistory = useCallback(async (portfolio, reason, amount) => {
+    if (!user) return;
+    await firebaseService.addPortfolioHistory({
+      portfolioId: portfolio.id,
+      portfolioName: portfolio.name,
+      currency: portfolio.currency || 'IDR',
+      prevInvested: parseFloat(portfolio.totalInvested) || 0,
+      newInvested: parseFloat(portfolio.totalInvested) || 0,
+      prevValue: parseFloat(portfolio.currentValue) || 0,
+      newValue: parseFloat(portfolio.currentValue) || 0,
+      reason,
+      amount: parseFloat(amount) || 0
+    });
   }, [user]);
 
   const checkTargets = useCallback(async () => {
@@ -106,6 +133,18 @@ export function useInvestments() {
     const newModal = (parseFloat(portfolio.totalInvested) || 0) + amt;
     const newVal = (parseFloat(portfolio.currentValue) || 0) + amt;
     await firebaseService.updatePortfolio(portfolio.id, { totalInvested: newModal, currentValue: newVal });
+
+    await firebaseService.addPortfolioHistory({
+      portfolioId: portfolio.id,
+      portfolioName: portfolio.name,
+      currency: portfolio.currency || 'IDR',
+      prevInvested: parseFloat(portfolio.totalInvested) || 0,
+      newInvested: newModal,
+      prevValue: parseFloat(portfolio.currentValue) || 0,
+      newValue: newVal,
+      reason: 'topup',
+      amount: amt
+    });
     
     await checkTargets();
   }, [user, checkTargets]);
@@ -135,13 +174,39 @@ export function useInvestments() {
     const newModal = Math.max(0, (parseFloat(portfolio.totalInvested) || 0) - amt);
     const newVal = Math.max(0, (parseFloat(portfolio.currentValue) || 0) - amt);
     await firebaseService.updatePortfolio(portfolio.id, { totalInvested: newModal, currentValue: newVal });
+
+    await firebaseService.addPortfolioHistory({
+      portfolioId: portfolio.id,
+      portfolioName: portfolio.name,
+      currency: portfolio.currency || 'IDR',
+      prevInvested: parseFloat(portfolio.totalInvested) || 0,
+      newInvested: newModal,
+      prevValue: parseFloat(portfolio.currentValue) || 0,
+      newValue: newVal,
+      reason: 'withdraw',
+      amount: amt
+    });
   }, [user]);
 
   const processUpdateValue = useCallback(async (portfolio, newCurrentValue) => {
     if (!user) return;
     const val = parseFloat(newCurrentValue);
     if (isNaN(val) || val < 0) throw new Error('Nilai tidak valid');
+
+    const prevVal = parseFloat(portfolio.currentValue) || 0;
     await firebaseService.updatePortfolio(portfolio.id, { currentValue: val });
+
+    await firebaseService.addPortfolioHistory({
+      portfolioId: portfolio.id,
+      portfolioName: portfolio.name,
+      currency: portfolio.currency || 'IDR',
+      prevInvested: parseFloat(portfolio.totalInvested) || 0,
+      newInvested: parseFloat(portfolio.totalInvested) || 0,
+      prevValue: prevVal,
+      newValue: val,
+      reason: 'update',
+      amount: val - prevVal
+    });
     
     await checkTargets();
   }, [user, checkTargets]);

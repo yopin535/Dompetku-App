@@ -6,7 +6,10 @@ import {
   onSnapshot, 
   getDocs,
   writeBatch,
-  updateDoc
+  updateDoc,
+  query,
+  orderBy,
+  limit
 } from 'firebase/firestore';
 
 import { auth } from '../config/firebase';
@@ -305,20 +308,52 @@ export const firebaseService = {
     }
   },
 
-  // Snapshot listeners (for real-time updates)
-  subscribeToCollection(collectionName, callback, userId) {
-    try {
-      const col = getCollectionRef(collectionName, userId);
-      return onSnapshot(col, (snapshot) => {
-        const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-        callback(docs);
-      }, (error) => {
-        console.error(`Snapshot error for ${collectionName}:`, error);
-        callback([], error);
-      });
-    } catch (error) {
-      console.error('Error setting up listener:', error);
-      throw error;
+    // Snapshot listeners (for real-time updates)
+    subscribeToCollection(collectionName, callback, userId) {
+      try {
+        const col = getCollectionRef(collectionName, userId);
+        return onSnapshot(col, (snapshot) => {
+          const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          callback(docs);
+        }, (error) => {
+          console.error(`Snapshot error for ${collectionName}:`, error);
+          callback([], error);
+        });
+      } catch (error) {
+        console.error('Error setting up listener:', error);
+        throw error;
+      }
+    },
+  
+    // Portfolio History
+    async addPortfolioHistory(data, userId) {
+      try {
+        const col = getCollectionRef('portfolio_history', userId);
+        const docRef = await addDoc(col, { ...data, at: data.at || Date.now() });
+        return docRef.id;
+      } catch (error) {
+        console.error('Error adding portfolio history:', error);
+        throw error;
+      }
+    },
+  
+    async getPortfolioHistory(userId, portfolioId) {
+      try {
+        const col = getCollectionRef('portfolio_history', userId);
+        let snapshot;
+        try {
+          const q = query(col, orderBy('at', 'desc'), limit(1000));
+          snapshot = await getDocs(q);
+        } catch (_e) {
+          snapshot = await getDocs(col);
+        }
+        let docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (portfolioId) docs = docs.filter(h => h.portfolioId === portfolioId);
+        docs.sort((a, b) => (b.at || 0) - (a.at || 0));
+        return docs;
+      } catch (error) {
+        console.error('Error getting portfolio history:', error);
+        throw error;
+      }
     }
-  }
-};
+  };
