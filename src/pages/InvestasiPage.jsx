@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { LineChart, Briefcase, TrendingUp, TrendingDown, Plus, ArrowUpCircle, ArrowDownCircle, RefreshCw, Globe, Target, Calendar, MoreVertical, Edit2, Trash2 } from 'lucide-react';
+import { LineChart, Briefcase, TrendingUp, TrendingDown, Plus, ArrowUpCircle, ArrowDownCircle, RefreshCw, Globe, Target, Calendar, MoreVertical, Edit2, Trash2, Download, AlertTriangle } from 'lucide-react';
 
 export default function InvestasiPage({
   portfolios, hideBalance, formatCurrency, defaultCurrency,
@@ -7,6 +7,7 @@ export default function InvestasiPage({
   setShowEditPortfolioModal, setEditPortfolioModalData, onDeletePortfolio
 }) {
   const [openMenuId, setOpenMenuId] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, portfolio: null, backupFirst: false });
   // Multi-currency summary per currency
   const currencySummary = useMemo(() => {
     const result = {};
@@ -122,7 +123,7 @@ export default function InvestasiPage({
                           <Edit2 className="w-3 h-3" /> Edit
                         </button>
                         <button 
-                          onClick={() => { onDeletePortfolio(p.id); setOpenMenuId(null); }} 
+                          onClick={() => { setDeleteConfirm({ open: true, portfolio: p, backupFirst: false }); setOpenMenuId(null); }} 
                           className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 flex items-center gap-2"
                         >
                           <Trash2 className="w-3 h-3" /> Hapus
@@ -164,6 +165,41 @@ export default function InvestasiPage({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {deleteConfirm.open && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center"><AlertTriangle className="w-5 h-5 text-red-600" /></div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-sm">Hapus Portofolio?</h3>
+                <p className="text-xs text-gray-500">{deleteConfirm.portfolio?.name}</p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-600 mb-4">Tindakan ini tidak bisa dibatalkan. Histori transaksi terkait akan tetap tersimpan.</p>
+            <label className="flex items-center gap-2 mb-5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 cursor-pointer">
+              <input type="checkbox" checked={deleteConfirm.backupFirst} onChange={e => setDeleteConfirm(s => ({ ...s, backupFirst: e.target.checked }))} className="rounded" />
+              <span className="text-xs font-medium text-gray-700 flex items-center gap-1"><Download className="w-3 h-3" /> Backup data portofolio (CSV) dulu sebelum hapus</span>
+            </label>
+            <div className="flex gap-2">
+              <button onClick={() => setDeleteConfirm({ open: false, portfolio: null, backupFirst: false })} className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-200">Batal</button>
+              <button onClick={() => {
+                if (deleteConfirm.backupFirst && deleteConfirm.portfolio) {
+                  const p = deleteConfirm.portfolio;
+                  const rows = [["Nama","Mata Uang","Modal","Nilai Saat Ini","Floating","Target","Tipe Target"]];
+                  rows.push([p.name, p.currency, p.totalInvested, p.currentValue, p.currentValue - p.totalInvested, p.targetReturn || "", p.targetReturnType || ""]);
+                  const csv = rows.map(r => r.join(",")).join("\n");
+                  const blob = new Blob([csv], { type: "text/csv" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a"); a.href = url; a.download = `backup-portofolio-${p.name}.csv`; a.click(); URL.revokeObjectURL(url);
+                }
+                onDeletePortfolio(deleteConfirm.portfolio.id);
+                setDeleteConfirm({ open: false, portfolio: null, backupFirst: false });
+              }} className="flex-1 py-2 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700">Hapus</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
