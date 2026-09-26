@@ -48,6 +48,7 @@ import { useCategories } from './hooks/useCategories';
 import { useInvestments } from './hooks/useInvestments';
 import { useNotifications } from './hooks/useNotifications';
 import EditPortfolioModal from './components/modals/EditPortfolioModal';
+import ImportPreviewModal from './components/modals/ImportPreviewModal';
 import PortfolioHistoryModal from './components/modals/PortfolioHistoryModal';
 
 function AppContent() {
