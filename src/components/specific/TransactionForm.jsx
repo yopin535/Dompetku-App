@@ -181,7 +181,11 @@ export default function TransactionForm({
                                         <div className="flex items-center gap-2">
                                             <input type="text" placeholder="Nama brg" value={item.name} onChange={(e) => handleItemChange(index, 'name', e.target.value)} className="flex-1 min-w-0 bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400" />
                                             <input type="number" placeholder="Harga" value={item.price} onChange={(e) => handleItemChange(index, 'price', e.target.value)} className="w-24 text-right bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400" />
-                                            <button type="button" onClick={() => handleRemoveItem(index)} className="text-gray-300 hover:text-rose-500"><XCircle className="w-5 h-5" /></button>
+                                            <button type="button" onClick={() => {
+      if (confirm('Hapus item ini dari rincian?')) {
+        handleRemoveItem(index);
+      }
+    }} className="text-gray-300 hover:text-rose-500"><XCircle className="w-5 h-5" /></button>
                                         </div>
                                         <div className="flex justify-start">
                                             <button type="button" onClick={() => handleOpenItemCatModal(index)} className={"text-[10px] px-2 py-1 rounded-md border flex items-center gap-1 transition-colors " + (item.category ? "bg-blue-50 border-blue-200 text-blue-700 font-bold" : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100")}>

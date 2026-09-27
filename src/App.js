@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { 
   Plus, Trash2, Wallet, TrendingUp, TrendingDown, DollarSign, 
   Cloud, Loader2, Tag, Calendar, PieChart, List, ChevronLeft, ChevronRight, 
@@ -50,6 +50,7 @@ import { useNotifications } from './hooks/useNotifications';
 import EditPortfolioModal from './components/modals/EditPortfolioModal';
 import ImportPreviewModal from './components/modals/ImportPreviewModal';
 import PortfolioHistoryModal from './components/modals/PortfolioHistoryModal';
+import ConfirmationModal from './components/modals/ConfirmationModal';
 
 function AppContent() {
   const { view, setView, loading, setLoading, notification, setNotification, syncStatus, setSyncStatus, user, setUser, transactions, setTransactions, customCategories, setCustomCategories, wallets, setWallets, portfolios, setPortfolios, notifications, setNotifications, unreadCount, setUnreadCount, showPortfolioModal, setShowPortfolioModal, newPortfolioName, setNewPortfolioName, showInvestActionModal, setShowInvestActionModal, investActionType, setInvestActionType, activePortfolio, setActivePortfolio, investAmount, setInvestAmount, reportWalletId, setReportWalletId, importPreview, setImportPreview } = useApp();
@@ -57,9 +58,15 @@ function AppContent() {
   const { defaultCurrency, setDefaultCurrency, geminiKey, setGeminiKey, gasUrl, setGasUrl, hideBalance, setHideBalance, showFloatingAdd, setShowFloatingAdd, showCatModal, setShowCatModal, showResetModal, setShowResetModal, showWalletModal, setShowWalletModal, showDummyModal, setShowDummyModal, showItemCatModal, setShowItemCatModal, activeItemIndex, setActiveItemIndex, newCatName, setNewCatName, previewImage, setPreviewImage, showDebtModal, setShowDebtModal, activeDebtTab, setActiveDebtTab, searchQuery, setSearchQuery, isSearchOpen, setIsSearchOpen, showFilterSheet, setShowFilterSheet, filterType, setFilterType, sortBy, setSortBy, showInstallmentModal, setShowInstallmentModal, selectedDebt, setSelectedDebt, installmentAmount, setInstallmentAmount, installmentDate, setInstallmentDate, installmentWalletId, setInstallmentWalletId, newPortfolioCurrency, setNewPortfolioCurrency, newPortfolioTargetType, setNewPortfolioTargetType, newPortfolioTargetValue, setNewPortfolioTargetValue, newPortfolioDuration, setNewPortfolioDuration, newPortfolioCustomDate, setNewPortfolioCustomDate, showEditPortfolioModal, setShowEditPortfolioModal, editPortfolioModalData, setEditPortfolioModalData, showHistoryModal, setShowHistoryModal, histories, setHistories, historyLoading, setHistoryLoading } = useApp();
 
   const { type, setType, description, setDescription, amount, setAmount, currency, setCurrency, date, setDate, selectedCategories, setSelectedCategories, items, setItems, receiptImageUrl, setReceiptImageUrl, walletId, setWalletId, toWalletId, setToWalletId, receivedAmount, setReceivedAmount, adminFee, setAdminFee, debtType, setDebtType, personName, setPersonName, dueDate, setDueDate, newWalletName, setNewWalletName, newWalletCurrency, setNewWalletCurrency, newWalletBalance, setNewWalletBalance, editId, setEditId, homeViewDate, setHomeViewDate, expandedId, setExpandedId, reportDate, setReportDate, reportType, setReportType, reportCurrency, setReportCurrency, isScanning, setIsScanning, uploadStatus, setUploadStatus } = useApp();
-  const fileInputRef = useRef(null);
-  const receiptInputRef = useRef(null);
-  const checkWalletRef = useRef(false);
+const fileInputRef = useRef(null);
+   const receiptInputRef = useRef(null);
+   const checkWalletRef = useRef(false);
+
+   // Confirmation states
+   const [deleteConfirmWallet, setDeleteConfirmWallet] = useState({ open: false, id: null });
+   const [deleteConfirmCategory, setDeleteConfirmCategory] = useState({ open: false, id: null });
+   const [deleteConfirmPortfolio, setDeleteConfirmPortfolio] = useState({ open: false, id: null });
+   const [deleteConfirmTransaction, setDeleteConfirmTransaction] = useState({ open: false, id: null });
 
   const {
     walletBalances, totalCashByCurrency, totalInvestmentsByCurrency, totalNetWorthByCurrency,
@@ -219,11 +226,17 @@ function AppContent() {
           setNotification({ type: 'error', message: 'Minimal harus ada 1 dompet aktif!' });
           return;
       }
+      setDeleteConfirmWallet({ open: true, id });
+  };
+
+  const confirmDeleteWallet = async () => {
+      if (!deleteConfirmWallet.id) return;
       setSyncStatus('saving');
       try {
-          await deleteWallet(id);
+          await deleteWallet(deleteConfirmWallet.id);
           setNotification({ type: 'success', message: 'Dompet dihapus.' });
       } catch (error) { setSyncStatus('offline'); }
+      setDeleteConfirmWallet({ open: false, id: null });
   };
 
   const downloadCSV = () => {
@@ -1044,11 +1057,17 @@ function AppContent() {
 
   const handleDeleteCategory = async (catId) => {
     if (!user) return;
+    setDeleteConfirmCategory({ open: true, id: catId });
+  };
+
+  const confirmDeleteCategory = async () => {
+    if (!user || !deleteConfirmCategory.id) return;
     setSyncStatus('saving');
     try {
-      await deleteCategory(catId);
+      await deleteCategory(deleteConfirmCategory.id);
       setNotification({ type: 'success', message: 'Kategori dihapus.' });
     } catch (error) { setSyncStatus('offline'); }
+    setDeleteConfirmCategory({ open: false, id: null });
   };
 
   const toggleCategory = (cat) => {
@@ -1259,7 +1278,6 @@ function AppContent() {
 
   const handleDeletePortfolio = async (id) => {
     if (!user) return;
-    setSyncStatus('saving');
     try {
       await firebaseService.deletePortfolio(id);
       setNotification({ type: 'success', message: 'Portofolio dihapus.' });
@@ -1351,7 +1369,18 @@ function AppContent() {
 
   const handleDelete = async (id) => {
     if (!user) return;
-    try { await firebaseService.deleteTransaction(id, user.uid); } catch (error) {}
+    setDeleteConfirmTransaction({ open: true, id });
+  };
+
+  const confirmDeleteTransaction = async () => {
+    if (!user || !deleteConfirmTransaction.id) return;
+    try {
+      await firebaseService.deleteTransaction(deleteConfirmTransaction.id, user.uid);
+      setNotification({ type: 'success', message: 'Transaksi dihapus.' });
+    } catch (error) {
+      setNotification({ type: 'error', message: 'Gagal menghapus transaksi.' });
+    }
+    setDeleteConfirmTransaction({ open: false, id: null });
   };
 
   const changeReportPeriod = (increment) => {
@@ -1650,6 +1679,28 @@ function AppContent() {
           onSave={handleSaveCategory}
           customCategories={customCategories}
           onDelete={handleDeleteCategory}
+        />
+        <ConfirmationModal
+          open={deleteConfirmWallet.open}
+          onClose={() => setDeleteConfirmWallet({ open: false, id: null })}
+          onConfirm={confirmDeleteWallet}
+          title="Hapus Dompet?"
+          message="Dompet ini akan dihapus permanen. Transaksi terkait tetap tersimpan."
+        />
+        <ConfirmationModal
+          open={deleteConfirmCategory.open}
+          onClose={() => setDeleteConfirmCategory({ open: false, id: null })}
+          onConfirm={confirmDeleteCategory}
+          title="Hapus Kategori?"
+          message="Kategori ini akan dihapus. Transaksi yang menggunakan kategori ini tidak terpengaruh."
+          variant="warning"
+        />
+        <ConfirmationModal
+          open={deleteConfirmTransaction.open}
+          onClose={() => setDeleteConfirmTransaction({ open: false, id: null })}
+          onConfirm={confirmDeleteTransaction}
+          title="Hapus Transaksi?"
+          message="Transaksi ini akan dihapus permanen dan tidak bisa dikembalikan."
         />
         <div className="px-4 md:px-0">
 {view === 'home' && (loading && transactions.length === 0 ? <SkeletonHome /> : (

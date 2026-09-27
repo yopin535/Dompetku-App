@@ -13,6 +13,7 @@ export default function NotificationPage() {
   };
 
   const handleDelete = async (id) => {
+    if (!confirm('Hapus notifikasi ini?')) return;
     await deleteNotification(id);
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
