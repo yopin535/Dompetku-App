@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2, Edit2, Camera, TrendingUp, TrendingDown, ArrowRightLeft, HandCoins, ChevronDown, CreditCard, Calendar, Image as ImageIcon, X, Receipt, Tag, Plus, Check, AlertTriangle } from 'lucide-react';
+import { Loader2, Edit2, Camera, TrendingUp, TrendingDown, ArrowRightLeft, HandCoins, ChevronDown, CreditCard, Calendar, Image as ImageIcon, X, Receipt, Tag, Plus, Check, AlertTriangle, XCircle } from 'lucide-react';
 
 export default function TransactionForm({
   isScanning, uploadStatus, editId, type, setType,
